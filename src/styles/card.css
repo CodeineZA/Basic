@@ -1,0 +1,437 @@
+/* The canvas and its cards.
+ *
+ * A collapsed card carries identity and its gate, nothing else - forty of them
+ * have to be scannable without reading. Left-click drops it down for the rest.
+ *
+ * Two rules from the standing conventions are load-bearing here:
+ *   - state is never carried by depth alone, so selection is a ring AND a
+ *     colour change, never just a bigger shadow;
+ *   - a collapsed body is visibility:hidden, not merely clipped, so its links
+ *     and buttons leave the tab order. */
+
+.canvas-wrap {
+    position: absolute;
+    inset: 0;
+    background: var(--canvas-ground);
+}
+
+/* React Flow's attribution stays. Hiding it needs a Pro subscription, so it is
+ * styled to sit quietly rather than removed. */
+.react-flow__attribution {
+    background: transparent;
+    font-size: var(--fs-xs);
+}
+
+.react-flow__attribution a { color: var(--ink-3); }
+
+/* -- the card ------------------------------------------------------------- */
+
+.card {
+    position: relative;
+    width: var(--card-w);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--card-accent);
+    border-radius: var(--radius);
+    background: var(--panel);
+    box-shadow: var(--shadow-1);
+    color: var(--ink);
+    font-size: var(--fs-sm);
+    overflow: hidden;
+    transition: border-color var(--motion), box-shadow var(--motion);
+}
+
+.card:hover { border-color: var(--line-strong); }
+
+.card.is-selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 var(--ring) var(--accent), var(--shadow-1);
+}
+
+.card.is-open {
+    z-index: var(--z-card-open);
+    box-shadow: var(--shadow-2);
+}
+
+/* Dimmed by the status filter: still readable, plainly not the subject. */
+.card.is-dimmed { opacity: 0.4; }
+
+.card.is-broken {
+    border-color: var(--danger);
+    border-left-color: var(--danger);
+}
+
+.card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    width: 100%;
+    min-height: var(--hit);
+    padding: var(--s-3);
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.card-head:focus-visible { outline: var(--ring) solid var(--accent); outline-offset: -2px; }
+
+.card-glyph {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--card-accent) 22%, transparent);
+    color: var(--card-accent);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+}
+
+.card-ident {
+    flex: 1;
+    min-width: 0;
+    /* Stacks the name over the type; inline spans would run them together. */
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+}
+
+.card-name {
+    display: block;
+    font-size: var(--fs-md);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The type is stated in words. Colour is a second signal, never the only one. */
+.card-type {
+    display: block;
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.card-chevron {
+    flex: none;
+    color: var(--ink-3);
+    transition: transform var(--motion);
+}
+
+.card.is-open .card-chevron { transform: rotate(180deg); }
+
+/* -- requirement chips ---------------------------------------------------- */
+
+.card-gates {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: 0 var(--s-3) var(--s-3);
+    border-top: 1px solid var(--line);
+    padding-top: var(--s-3);
+}
+
+.chip {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+}
+
+.chip .chip-icon { flex: none; opacity: 0.8; }
+
+.chip .chip-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chip-more { color: var(--ink-3); }
+
+/* -- expanded body -------------------------------------------------------- */
+
+.card-body {
+    border-top: 1px solid var(--line);
+    padding: var(--s-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+}
+
+.card[aria-expanded="false"] .card-body {
+    /* Clipping alone would keep these focusable. */
+    display: none;
+    visibility: hidden;
+}
+
+.field-row {
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: var(--s-3);
+    align-items: baseline;
+    font-size: var(--fs-xs);
+}
+
+.field-label { color: var(--ink-3); }
+.field-value { color: var(--ink); overflow-wrap: anywhere; }
+
+/* Nothing there is stated as nothing, never guessed at. */
+.field-value.is-unset { color: var(--ink-3); }
+
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-pending);
+    flex: none;
+}
+
+.status-pending .status-dot { background: var(--status-pending); }
+.status-in-progress .status-dot { background: var(--status-progress); }
+.status-complete .status-dot { background: var(--status-complete); }
+
+.card-link {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--hit);
+    padding: 0 var(--s-3);
+    margin: 0 calc(var(--s-3) * -1) calc(var(--s-3) * -1);
+    border: none;
+    border-top: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--accent);
+    font: inherit;
+    font-size: var(--fs-xs);
+    text-align: left;
+    width: calc(100% + var(--s-3) * 2);
+    cursor: pointer;
+}
+
+.card-link:hover { background: var(--sunken); }
+.card-link:focus-visible { outline: var(--ring) solid var(--accent); outline-offset: -2px; }
+.card-link.is-missing { color: var(--ink-3); cursor: default; }
+.card-link.is-missing:hover { background: var(--panel-2); }
+
+/* -- handles -------------------------------------------------------------- */
+
+.react-flow__handle {
+    width: 11px;
+    height: 11px;
+    border: 1px solid var(--panel);
+    background: var(--line-strong);
+    opacity: 0;
+    transition: opacity var(--motion), background var(--motion);
+}
+
+.card:hover .react-flow__handle,
+.card.is-selected .react-flow__handle { opacity: 1; }
+
+.react-flow__handle:hover { background: var(--accent); }
+
+/* -- edges ---------------------------------------------------------------- */
+
+.react-flow__edge-path {
+    stroke: var(--edge);
+    stroke-width: 1.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+    stroke: var(--edge-strong);
+    stroke-width: 2;
+}
+
+/* Sketch versus promoted is dash versus solid, not a colour change. */
+.react-flow__edge.is-sketch .react-flow__edge-path {
+    stroke-dasharray: 5 4;
+}
+
+.edge-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: var(--s-1) var(--s-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink-2);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+    pointer-events: all;
+    cursor: pointer;
+}
+
+.edge-badge:hover { border-color: var(--accent); color: var(--ink); }
+.edge-badge .lock { color: var(--warn); }
+
+/* -- inspector and editor ------------------------------------------------- */
+
+.editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.editor-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+    font-size: var(--fs-sm);
+}
+
+.editor-head .path { font-family: var(--mono); color: var(--ink-3); font-size: var(--fs-xs); }
+
+.editor-area {
+    flex: 1;
+    width: 100%;
+    padding: var(--s-5);
+    border: none;
+    resize: none;
+    background: var(--panel);
+    color: var(--ink);
+    /* Never below 16px: iOS zooms the page on focus otherwise. */
+    font: var(--fs-input)/1.6 var(--mono);
+    tab-size: 2;
+}
+
+.editor-area:focus { outline: none; }
+
+.conflict {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    flex-wrap: wrap;
+    padding: var(--s-3) var(--s-4);
+    background: color-mix(in srgb, var(--warn) 16%, var(--panel));
+    border-bottom: 1px solid var(--warn);
+    font-size: var(--fs-sm);
+}
+
+.inspector-field { margin-bottom: var(--s-4); }
+
+.inspector-field .label {
+    display: block;
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    margin-bottom: var(--s-2);
+}
+
+.rel-list { list-style: none; margin: 0; padding: 0; }
+
+.rel-list li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-3) 0;
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-sm);
+}
+
+.rel-list .rel-name { font-weight: 600; }
+
+/* Provenance: which file and field claimed this. */
+.rel-list .rel-source {
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+}
+
+.link-btn {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.link-btn:hover { text-decoration: underline; }
+
+/* -- editor segments ------------------------------------------------------ */
+
+.editor-scroll {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--panel);
+}
+
+.editor-scroll .editor-area {
+    display: block;
+    min-height: 0;
+    padding: var(--s-4) var(--s-5);
+}
+
+.generated {
+    margin: var(--s-3) var(--s-5);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--sunken);
+    overflow: hidden;
+}
+
+.generated-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: var(--s-2) var(--s-3);
+    border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+}
+
+.generated-body {
+    margin: 0;
+    padding: var(--s-3);
+    font: var(--fs-sm)/1.6 var(--mono);
+    color: var(--ink-2);
+    white-space: pre-wrap;
+    overflow-x: auto;
+}
+
+/* React Flow's own chrome ships light; bring it onto the theme. */
+.react-flow__controls {
+    box-shadow: var(--shadow-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.react-flow__controls-button {
+    width: var(--hit);
+    height: var(--hit);
+    border: none;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    fill: var(--ink-2);
+}
+
+.react-flow__controls-button:last-child { border-bottom: none; }
+.react-flow__controls-button:hover { background: var(--sunken); fill: var(--ink); }
+
+.flow-shell { width: 100%; height: 100%; }

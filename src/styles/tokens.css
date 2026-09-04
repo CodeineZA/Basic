@@ -1,0 +1,118 @@
+/* Every literal value in the app lives here.
+ *
+ * A raw hex, a raw gap or a raw z-index anywhere else is a bug: the fix is to
+ * add the missing token, not to inline the value. Light is the base; the dark
+ * block redefines only what changes, so no colour has its ONLY definition
+ * inside a media query. */
+
+:root {
+    color-scheme: light dark;
+
+    /* ink and ground */
+    --ground: #f4f2ee;
+    --panel: #ffffff;
+    --panel-2: #faf9f7;
+    --sunken: #eceae5;
+    --line: #d9d5cd;
+    --line-strong: #b9b3a8;
+    --ink: #1d1c19;
+    --ink-2: #55514a;
+    --ink-3: #8a847a;
+    --accent: #4a6f8a;
+    --accent-ink: #ffffff;
+    --danger: #9a3a32;
+    --warn: #8a6a1f;
+    --ok: #3f6b46;
+
+    /* status, which is never carried by colour alone */
+    --status-pending: #8a847a;
+    --status-progress: #8a6a1f;
+    --status-complete: #3f6b46;
+
+    /* canvas */
+    --canvas-ground: #efece6;
+    --canvas-dot: #d5d0c6;
+    --edge: #9a948a;
+    --edge-strong: #4a6f8a;
+    --card-accent: var(--accent);
+
+    /* type */
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+    --fs-xs: 11px;
+    --fs-sm: 12px;
+    --fs-md: 13px;
+    --fs-lg: 15px;
+    --fs-xl: 19px;
+    /* iOS zooms any input under 16px, so text entry never goes below this. */
+    --fs-input: 16px;
+    --lh: 1.5;
+
+    /* space */
+    --s-1: 2px;
+    --s-2: 4px;
+    --s-3: 8px;
+    --s-4: 12px;
+    --s-5: 16px;
+    --s-6: 24px;
+    --s-7: 32px;
+
+    /* shape */
+    --radius: 6px;
+    --radius-lg: 10px;
+    --ring: 2px;
+    --card-w: 240px;
+    /* Touch floors belong to the pointer, not the viewport width. */
+    --hit: 34px;
+
+    /* depth - decoration only, never the carrier of a state */
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08);
+    --shadow-2: 0 6px 20px rgb(0 0 0 / 0.16);
+
+    /* layers */
+    --z-canvas: 1;
+    --z-card-open: 5;
+    --z-panel: 10;
+    --z-dialog: 100;
+
+    --motion: 140ms ease;
+}
+
+@media (pointer: coarse) {
+    :root { --hit: 44px; }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --ground: #14161a;
+        --panel: #1b1e23;
+        --panel-2: #21252b;
+        --sunken: #0f1114;
+        --line: #2e333b;
+        --line-strong: #454c57;
+        --ink: #e8e6e1;
+        --ink-2: #a8a49c;
+        --ink-3: #757169;
+        --accent: #6f9ec0;
+        --accent-ink: #0f1114;
+        --danger: #d38078;
+        --warn: #d3b06a;
+        --ok: #7fb287;
+
+        --status-pending: #757169;
+        --status-progress: #d3b06a;
+        --status-complete: #7fb287;
+
+        --canvas-ground: #101215;
+        --canvas-dot: #262b32;
+        --edge: #545b66;
+        --edge-strong: #6f9ec0;
+
+        --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+        --shadow-2: 0 8px 28px rgb(0 0 0 / 0.55);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root { --motion: 0ms; }
+}

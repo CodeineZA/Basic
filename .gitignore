@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.basic-tmp
+.DS_Store
+
+# A Basic *project* scaffolded into this folder. The app's source and a game
+# project are different things, and running the app from its own directory
+# during development is an easy accident to make twice.
+/basic.json
+/relations.yaml
+/flags.yaml
+/templates/
+/progression/
+/entities/
+/canvases/
+/.basic/

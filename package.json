@@ -1,0 +1,34 @@
+{
+  "name": "basic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A self-building game wiki with a flow-chart front end",
+  "type": "module",
+  "main": "electron/main.js",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "electron:dev": "electron ."
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^1.1.5",
+    "@xyflow/react": "^12.8.6",
+    "chokidar": "^4.0.3",
+    "markdown-it": "^14.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^38.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
+  }
+}
