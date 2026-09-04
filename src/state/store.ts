@@ -7,9 +7,10 @@
 import { parse } from 'yaml';
 import { buildIndex, type GraphIndex } from '../core/index-graph.ts';
 import { parseDoc, type ParsedDoc } from '../core/parse-doc.ts';
-import { makeProject, parseTemplate, DEFAULT_RELATIONS, type Project } from '../core/project.ts';
+import { makeProject, parseTemplate, DEFAULT_RELATIONS, DEFAULT_STATUSES, type Project } from '../core/project.ts';
 import { renderSections } from '../core/generate.ts';
 import { applyBlocks } from '../core/write-doc.ts';
+import type { EditResult } from '../core/edit-doc.ts';
 import { scaffoldProject } from '../core/scaffold.ts';
 import type { Problem, Relation, Template } from '../core/types.ts';
 import { platform, type FileChange } from '../platform/index.ts';
@@ -53,6 +54,8 @@ export interface Store {
     /** Current text of a document: the unsaved buffer if there is one. */
     textOf(path: string): string;
     setBuffer(path: string, text: string): void;
+    /** Apply a structured edit to a document, e.g. reordering an act's beats. */
+    applyEdit(path: string, edit: (text: string, file: string) => EditResult): boolean;
     resolveConflict(path: string, keep: 'mine' | 'theirs'): void;
     save(): Promise<void>;
 }
@@ -93,7 +96,7 @@ export function createStore(): Store {
             const text = await platform.read(root, path);
             if (text !== null) docs.set(path, { path, text });
         }
-        const name = readName(docs) ?? root.split(/[\\/]/).pop() ?? 'Basic';
+        const name = readManifest(docs).name ?? root.split(/[\\/]/).pop() ?? 'Basic';
         state = { ...state, root, name, docs, busy: false };
         reindex();
 
@@ -148,6 +151,24 @@ export function createStore(): Store {
             docs.set(path, text === doc.text ? { path, text: doc.text } : { ...doc, buffer: text });
             state = { ...state, docs };
             reindex();
+        },
+
+        /* Structured edits go through the same buffer as typing does, so the canvas, the
+         * script view and any open editor all move together and a single save writes it. */
+        applyEdit(path, edit) {
+            const doc = state.docs.get(path);
+            if (!doc) return false;
+
+            const result = edit(doc.buffer ?? doc.text, path);
+            if (!result.ok) {
+                state = { ...state, writeProblems: [...state.writeProblems, result.problem] };
+                reindex();
+                return false;
+            }
+            if (!result.changed) return false;
+
+            this.setBuffer(path, result.text);
+            return true;
         },
 
         resolveConflict(path, keep) {
@@ -215,14 +236,18 @@ export function createStore(): Store {
 
 /* -- reading the project's own schema off disk ---------------------------- */
 
-function readName(docs: Map<string, OpenDoc>): string | null {
+function readManifest(docs: Map<string, OpenDoc>): { name: string | null; statuses: string[] } {
+    const fallback = { name: null, statuses: [...DEFAULT_STATUSES] };
     const manifest = docs.get('basic.json');
-    if (!manifest) return null;
+    if (!manifest) return fallback;
     try {
-        const parsed = JSON.parse(manifest.buffer ?? manifest.text) as { name?: unknown };
-        return typeof parsed.name === 'string' ? parsed.name : null;
+        const parsed = JSON.parse(manifest.buffer ?? manifest.text) as { name?: unknown; statuses?: unknown };
+        const statuses = Array.isArray(parsed.statuses) && parsed.statuses.every((v) => typeof v === 'string')
+            ? parsed.statuses as string[]
+            : fallback.statuses;
+        return { name: typeof parsed.name === 'string' ? parsed.name : null, statuses };
     } catch {
-        return null;
+        return fallback;
     }
 }
 
@@ -248,5 +273,5 @@ function readProject(docs: Map<string, OpenDoc>, name: string): Project {
         } catch { /* fall back to the defaults */ }
     }
 
-    return makeProject(name, templates, relations);
+    return makeProject(name, templates, relations, readManifest(docs).statuses);
 }

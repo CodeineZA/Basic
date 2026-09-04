@@ -41,6 +41,8 @@ src/core/         PURE. No DOM, no Electron, no fs. This is where the thinking l
   parse-doc.ts      Frontmatter split and the ONE wikilink parser.
   write-doc.ts      Managed-block writer. The sharpest edge in the app.
   index-graph.ts    Builds the graph. Two passes: nodes, then edges.
+  fold.ts           World state at any beat, and ordering mistakes only order can reveal.
+  edit-doc.ts       Frontmatter edits (beat order, status) that keep comments and prose.
   project.ts        Templates and the relation registry.
   generate.ts       Renders a template's declared sections into Markdown.
   scaffold.ts       What a new project starts life as.
@@ -52,7 +54,7 @@ src/platform/     The ONLY files that know Electron from browser.
   demo.ts           The project opened on first run, built by the real scaffolder.
 
 src/state/store.ts  One store. Docs in, index out, every view subscribes.
-src/ui/             React. canvas/ wiki/ explorer/ inspector/
+src/ui/             React. canvas/ script/ wiki/ explorer/ inspector/
 src/styles/         tokens.css owns every literal value.
 test/               Flat *.test.ts, node --test.
 
@@ -73,6 +75,8 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 | What does "Available from" mean? | `src/core/project.ts` (relations) + the template's `sections` |
 | Why is the canvas framed like that? | `src/ui/canvas/tidy.ts` |
 | Why did the card open on click but not on drag? | `src/ui/canvas/card.tsx` |
+| What does the world look like at beat N? | `src/core/fold.ts` |
+| How is an act's beat order changed? | `src/core/edit-doc.ts` |
 | Where do files actually get written? | `electron/app.js` |
 | Why is the app served from basic:// ? | `electron/app.js`, the protocol comment |
 | Why did packaging fail with EPERM? | see below - it is the dev server |
@@ -98,6 +102,15 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
   zoom, or an invisible canvas. Basic sidesteps the whole thing — it supplies `width` and
   `height` on every node and computes the viewport itself in `tidy.ts`, using the same
   numbers dagre used. Layout and framing cannot disagree because they are one calculation.
+- **Never put required work in `requestAnimationFrame` or `ResizeObserver`.** Both are
+  callback-driven and neither fires in a window that is not being composited - hidden,
+  minimised, occluded, or a headless preview pane. The canvas framing sat in a rAF for a
+  while and simply never ran. `getBoundingClientRect` inside a `useEffect` is synchronous,
+  the DOM is already committed by then, and it works whether or not anything is painting.
+- **Check the viewport is not 0x0 before believing any measurement.** A collapsed preview
+  pane reports `innerWidth === 0`, every element measures 0x0, and it looks exactly like a
+  broken flexbox. Several hours went into a CSS bug that did not exist. `resize_window`
+  fixes it; measuring `innerWidth` first would have saved the lot.
 - **A `useRef` guard inside an effect is eaten by StrictMode.** The first invocation sets
   the guard, the second returns early, and the real render never runs. If an effect must
   run once per *thing*, key the effect on that thing.
@@ -145,8 +158,14 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 
 ## State
 
-M1 is done and verified end to end: templates, object pages, a progression document with
-beats, the graph index with provenance, generated sections, the canvas, and the editor.
+M1 and M2 are done and verified end to end.
+
+M1: templates, object pages, a progression document with beats, the graph index with
+provenance, generated sections, the canvas, and the editor.
+
+M2: multi-beat acts, the script view, beat reordering and editing that preserves YAML
+comments, the fold that derives world state at any beat, and the beat scrubber that shows
+the act - script and canvas both - as of a moment in time.
 The desktop app is packaged and shipping: an NSIS installer, the renderer served over
 `basic://`, and updates from GitHub Releases. Verified in a packaged build, not just wired:
 `renderer loaded: basic://app/index.html`, and a kept 0.1.0 build found 0.1.1 on the live

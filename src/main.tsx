@@ -7,6 +7,7 @@ import { App } from './ui/app.tsx';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/card.css';
+import './styles/script.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('no #root element to mount into');

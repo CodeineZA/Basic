@@ -1,0 +1,274 @@
+/* The script view: a progression document read top to bottom.
+ *
+ * Deliberately reads like a document rather than a form. Beats are numbered, spacing does
+ * the grouping, and a beat's status is carried by a word as well as a colour. */
+
+.script {
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--s-5) var(--s-6) var(--s-7);
+}
+
+.script-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--s-4);
+    margin-bottom: var(--s-5);
+    padding-bottom: var(--s-4);
+    border-bottom: 1px solid var(--line);
+}
+
+.script-head .panel-title { margin: 0; }
+
+.beats {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 780px;
+}
+
+.beat {
+    position: relative;
+    padding: var(--s-4) var(--s-4) var(--s-3) var(--s-5);
+    margin-bottom: var(--s-4);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--status-pending);
+    border-radius: var(--radius);
+    background: var(--panel);
+    cursor: pointer;
+}
+
+.beat:hover { border-color: var(--line-strong); }
+
+/* Selection is a ring and an ink change, never depth on its own. */
+.beat.is-selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 var(--ring) var(--accent);
+}
+
+.beat.status-pending { border-left-color: var(--status-pending); }
+.beat.status-in-progress { border-left-color: var(--status-progress); }
+.beat.status-complete { border-left-color: var(--status-complete); }
+
+/* The scrubber's position. Marked with a label, not only a tint. */
+.beat.is-cursor { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+
+.beat.is-cursor::after {
+    content: "you are here";
+    position: absolute;
+    top: calc(var(--s-2) * -1);
+    left: var(--s-5);
+    padding: 0 var(--s-2);
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-radius: var(--radius);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.04em;
+}
+
+/* Beats after the scrubber have not happened yet at this point in time. */
+.beat.is-ahead { opacity: 0.45; }
+
+.beat-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    margin-bottom: var(--s-2);
+}
+
+.beat-no {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--sunken);
+    color: var(--ink-3);
+    font-size: var(--fs-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.beat-title {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-lg);
+    font-weight: 600;
+}
+
+.beat-status {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex: none;
+}
+
+.beat-status select {
+    min-height: var(--hit);
+    padding: 0 var(--s-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-2);
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--fs-xs);
+    text-transform: capitalize;
+}
+
+.beat-controls { display: flex; gap: var(--s-1); flex: none; }
+
+.icon-btn {
+    width: var(--hit);
+    height: var(--hit);
+    display: grid;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--ink-3);
+    font: inherit;
+    cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) { background: var(--sunken); color: var(--ink); border-color: var(--line); }
+.icon-btn:focus-visible { outline: var(--ring) solid var(--accent); outline-offset: -2px; }
+.icon-btn:disabled { opacity: 0.3; cursor: default; }
+.icon-btn.is-danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+
+.beat-gates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    margin: var(--s-2) 0 var(--s-3);
+}
+
+.beat-prose {
+    margin: 0 0 var(--s-3);
+    color: var(--ink-2);
+    max-width: 62ch;
+}
+
+.beat-row {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: var(--s-3);
+    align-items: baseline;
+    padding: var(--s-1) 0;
+    font-size: var(--fs-sm);
+}
+
+.beat-row-label {
+    color: var(--ink-3);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.beat-row-value { color: var(--ink); overflow-wrap: anywhere; }
+.beat-row-value.is-unset { color: var(--ink-3); }
+
+.beat-foot {
+    margin-top: var(--s-3);
+    padding-top: var(--s-2);
+    border-top: 1px solid var(--line);
+    font-size: var(--fs-xs);
+}
+
+.link-btn.is-on { font-weight: 600; }
+
+/* -- view switcher --------------------------------------------------------- */
+
+.centre-bar {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--s-2) var(--s-4);
+    border-bottom: 1px solid var(--line);
+    background: var(--panel-2);
+    flex: none;
+}
+
+/* The view's own scroll container, and the positioning context the canvas needs. */
+.centre-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.view-switch {
+    display: flex;
+    gap: var(--s-1);
+    padding: var(--s-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-2);
+}
+
+.view-switch button {
+    min-height: 28px;
+    padding: 0 var(--s-3);
+    border: none;
+    border-radius: calc(var(--radius) - 2px);
+    background: none;
+    color: var(--ink-3);
+    font: inherit;
+    font-size: var(--fs-xs);
+    cursor: pointer;
+}
+
+.view-switch button:hover { color: var(--ink); }
+
+.view-switch button[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+}
+
+/* -- beat scrubber --------------------------------------------------------- */
+
+.scrubber {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--fs-sm);
+}
+
+.scrubber select {
+    max-width: 260px;
+    min-height: 26px;
+    padding: 0 var(--s-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--fs-sm);
+}
+
+/* -- world panel ----------------------------------------------------------- */
+
+.world-group { margin-bottom: var(--s-4); }
+
+.world-group h4 {
+    margin: 0 0 var(--s-2);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    font-weight: 600;
+}
+
+.world-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: var(--fs-sm);
+}
+
+.world-list li {
+    padding: var(--s-2) 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.world-list .from { color: var(--ink-3); font-size: var(--fs-xs); }

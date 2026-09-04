@@ -12,9 +12,10 @@
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useRef } from 'react';
+import type { Gate } from '../chips.ts';
 
 export interface CardField { label: string; value: string; unset?: boolean; }
-export interface CardGate { icon: string; text: string; }
+export type CardGate = Gate;
 
 export interface CardData extends Record<string, unknown> {
     nodeId: string;

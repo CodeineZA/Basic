@@ -2,12 +2,16 @@
  * right, status along the bottom.
  *
  * Canvases and documents are both just tabs, because a canvas that refers to another canvas
- * and a page that links to another page are the same idea. */
+ * and a page that links to another page are the same idea. A progression document gets two
+ * views of the same data - script and flow - which are a switch, not two tabs. */
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createStore } from '../state/store.ts';
 import { DEMO_ROOT, ensureDemo, platform, type UpdateState } from '../platform/index.ts';
+import { addBeat, moveBeat, nextBeatId, removeBeat, updateBeat } from '../core/edit-doc.ts';
 import { GraphView } from './canvas/graph.tsx';
+import { ScriptView } from './script/script.tsx';
+import { WorldPanel } from './script/world.tsx';
 import { Editor } from './wiki/editor.tsx';
 import { Explorer } from './explorer/explorer.tsx';
 import { Inspector } from './inspector/inspector.tsx';
@@ -15,6 +19,7 @@ import { Inspector } from './inspector/inspector.tsx';
 const store = createStore();
 
 interface Tab { id: string; title: string; }
+type ActView = 'script' | 'flow';
 
 /** The updater's state, kept in sync with the main process. */
 function useUpdates(): UpdateState {
@@ -71,6 +76,9 @@ export function App(): React.JSX.Element {
     const [tabs, setTabs] = useState<Tab[]>([]);
     const [active, setActive] = useState<string | null>(null);
     const [selected, setSelected] = useState<string | null>(null);
+    const [actView, setActView] = useState<ActView>('script');
+    /** The beat the world is being shown as of. Null is "before anything happens". */
+    const [cursor, setCursor] = useState<string | null>(null);
 
     const open = useCallback((tab: Tab) => {
         setTabs((current) => (current.some((t) => t.id === tab.id) ? current : [...current, tab]));
@@ -117,6 +125,16 @@ export function App(): React.JSX.Element {
     const activeAct = active?.startsWith('act:') ? active.slice(4) : null;
     const doc = activeDoc ? state.docs.get(activeDoc) : undefined;
 
+    /* Beat edits go through the store's buffer, so the script view, the canvas and any open
+     * editor of the same act all move together and one save writes it. */
+    const actPath = activeAct ? index.nodes.get(activeAct)?.path : undefined;
+    const beatsOfAct = (actId: string): string[] =>
+        index.order.filter((id) => id.startsWith(`${actId}#`)).map((id) => id.slice(actId.length + 1));
+
+    const editAct = (fn: (text: string, file: string) => ReturnType<typeof moveBeat>): void => {
+        if (actPath) store.applyEdit(actPath, fn);
+    };
+
     return (
         <>
             <UpdateBanner state={updates} />
@@ -124,7 +142,9 @@ export function App(): React.JSX.Element {
                 <div className="tabs" role="tablist">
                     {tabs.map((tab) => {
                         const path = tab.id.startsWith('doc:') ? tab.id.slice(4) : null;
-                        const dirty = path ? state.docs.get(path)?.buffer !== undefined : false;
+                        const dirty = path
+                            ? state.docs.get(path)?.buffer !== undefined
+                            : state.docs.get(index.nodes.get(tab.id.slice(4))?.path ?? '')?.buffer !== undefined;
                         return (
                             <button
                                 key={tab.id}
@@ -153,13 +173,54 @@ export function App(): React.JSX.Element {
 
                 <main className="centre">
                     {activeAct && (
-                        <GraphView
-                            index={index}
-                            project={project}
-                            actId={activeAct}
-                            onOpenDoc={openDoc}
-                            onSelectNode={setSelected}
-                        />
+                        <>
+                            {/* Its own bar rather than floating over the content: an absolutely
+                                positioned switcher lands on top of whatever the view puts in
+                                that corner. */}
+                            <div className="centre-bar">
+                                <div className="view-switch" role="group" aria-label="View">
+                                    <button
+                                        type="button" aria-pressed={actView === 'script'}
+                                        onClick={() => setActView('script')}
+                                    >Script</button>
+                                    <button
+                                        type="button" aria-pressed={actView === 'flow'}
+                                        onClick={() => setActView('flow')}
+                                    >Flow</button>
+                                </div>
+                            </div>
+
+                            <div className="centre-body">
+                            {actView === 'script' ? (
+                                <ScriptView
+                                    index={index}
+                                    project={project}
+                                    actId={activeAct}
+                                    cursor={cursor}
+                                    selected={selected}
+                                    onSetCursor={setCursor}
+                                    onSelect={setSelected}
+                                    onOpenDoc={openDoc}
+                                    onMove={(beatId, delta) => editAct((t, f) => moveBeat(t, beatId, delta, f))}
+                                    onAdd={(afterBeatId) => {
+                                        const id = nextBeatId(beatsOfAct(activeAct));
+                                        editAct((t, f) => addBeat(t, { id, title: 'Untitled beat' }, afterBeatId, f));
+                                    }}
+                                    onRemove={(beatId) => editAct((t, f) => removeBeat(t, beatId, f))}
+                                    onUpdate={(beatId, patch) => editAct((t, f) => updateBeat(t, beatId, patch, f))}
+                                />
+                            ) : (
+                                <GraphView
+                                    index={index}
+                                    project={project}
+                                    actId={activeAct}
+                                    cursor={cursor}
+                                    onOpenDoc={openDoc}
+                                    onSelectNode={setSelected}
+                                />
+                            )}
+                            </div>
+                        </>
                     )}
                     {activeDoc && doc && (
                         <Editor
@@ -178,7 +239,9 @@ export function App(): React.JSX.Element {
 
                 <aside className="right">
                     {state.notice && <p className="notice" role="alert">{state.notice}</p>}
-                    <Inspector index={index} project={project} selected={selected} onOpenDoc={openDoc} />
+                    {cursor !== null
+                        ? <WorldPanel index={index} project={project} cursor={cursor} onOpenDoc={openDoc} />
+                        : <Inspector index={index} project={project} selected={selected} onOpenDoc={openDoc} />}
                 </aside>
 
                 <footer className="status">
@@ -188,6 +251,23 @@ export function App(): React.JSX.Element {
                         {errors.length} {errors.length === 1 ? 'problem' : 'problems'}
                     </span>
                     <span className="muted">{index.nodes.size} nodes · {index.edges.length} links</span>
+
+                    <label className="scrubber">
+                        <span className="muted">World at</span>
+                        <select
+                            value={cursor ?? ''}
+                            aria-label="Show the world as of a beat"
+                            onChange={(e) => setCursor(e.target.value === '' ? null : e.target.value)}
+                        >
+                            <option value="">— the start —</option>
+                            {index.order.map((id, i) => (
+                                <option key={id} value={id}>
+                                    {i + 1}. {index.nodes.get(id)?.name ?? id}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+
                     <span className="spacer" />
                     <span className="muted">v{updates.version}</span>
                     <button

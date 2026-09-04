@@ -8,46 +8,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Background, BackgroundVariant, Controls, MarkerType, ReactFlow, ReactFlowProvider,
-    useEdgesState, useNodesState, useReactFlow,
-    type Edge as FlowEdge, type Node as FlowNode,
+    useEdgesState, useNodesState,
+    type Edge as FlowEdge, type Node as FlowNode, type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import type { GraphIndex } from '../../core/index-graph.ts';
-import { incoming, outgoing, resolveId } from '../../core/index-graph.ts';
+import { incoming, outgoing } from '../../core/index-graph.ts';
+import { gateChips } from '../chips.ts';
+import { existsAt, foldTo } from '../../core/fold.ts';
 import type { Project } from '../../core/project.ts';
 import type { DocNode, Requirement } from '../../core/types.ts';
-import { Card, type CardData, type CardField, type CardGate } from './card.tsx';
+import { Card, type CardData, type CardField } from './card.tsx';
 import { Edge, type EdgeData } from './edge.tsx';
 import { boundsOf, NODE_W, pushBelow, tidy, viewportFor, type Bounds } from './tidy.ts';
 
 const nodeTypes = { card: Card };
 const edgeTypes = { link: Edge };
-
-/** Flatten a requirement into the chips a collapsed card can show. */
-export function gateChips(req: Requirement | undefined, index: GraphIndex): CardGate[] {
-    const name = (ref: string): string => {
-        const id = resolveId(index, ref);
-        return id ? (index.nodes.get(id)?.name ?? ref) : ref;
-    };
-    const out: CardGate[] = [];
-
-    const walk = (r: Requirement | undefined, negated = false): void => {
-        if (!r || typeof r !== 'object') return;
-        const lock = negated ? '⊘' : '🔒';
-        if ('all' in r) { for (const sub of r.all) walk(sub, negated); return; }
-        if ('any' in r) { for (const sub of r.any) walk(sub, negated); return; }
-        if ('not' in r) { walk(r.not, !negated); return; }
-        if ('flag' in r) { out.push({ icon: lock, text: `flag ${r.flag}` }); return; }
-        if ('has' in r) { out.push({ icon: lock, text: `has ${name(r.has)}` }); return; }
-        if ('done' in r) { out.push({ icon: lock, text: `after ${name(r.done)}` }); return; }
-        if ('visited' in r) { out.push({ icon: lock, text: `visited ${name(r.visited)}` }); return; }
-        if ('counter' in r) { out.push({ icon: lock, text: `${r.counter} ${r.op} ${r.n}` }); }
-    };
-
-    walk(req);
-    return out;
-}
 
 /* One place that knows how tall a card is. Approximate by design: it only has
  * to be close enough that the layout breathes and the fit is sensible. */
@@ -103,11 +80,13 @@ export interface GraphViewProps {
     index: GraphIndex;
     project: Project;
     actId: string;
+    /** Show the act as of this beat: later beats, and things not yet introduced, dim. */
+    cursor?: string | null;
     onOpenDoc: (path: string) => void;
     onSelectNode: (id: string | null) => void;
 }
 
-export function GraphView({ index, project, actId, onOpenDoc, onSelectNode }: GraphViewProps): React.JSX.Element {
+export function GraphView({ index, project, actId, cursor = null, onOpenDoc, onSelectNode }: GraphViewProps): React.JSX.Element {
     const [openId, setOpenId] = useState<string | null>(null);
 
     const { nodes, edges, bounds } = useMemo(() => {
@@ -117,6 +96,17 @@ export function GraphView({ index, project, actId, onOpenDoc, onSelectNode }: Gr
         const links = index.edges
             .filter((e) => ids.has(e.from) && ids.has(e.to) && e.rel !== 'MENTIONS')
             .map((e, i) => ({ ...e, key: `${e.from}|${e.rel}|${e.to}|${i}` }));
+
+        /* With a cursor set, the canvas shows the act as of that moment: beats that have
+         * not happened and things nobody has met yet are dimmed rather than hidden, so the
+         * shape of what is coming stays visible. */
+        const world = cursor === null ? null : foldTo(index, project, cursor);
+        const reached = new Set(world?.elapsed ?? []);
+        const isDim = (node: DocNode): boolean => {
+            if (!world) return false;
+            if (node.kind === 'beat') return !reached.has(node.id);
+            return !existsAt(world, node.id);
+        };
 
         const cards: CardData[] = members.map((node) => {
             const template = project.templates.get(node.type);
@@ -133,6 +123,7 @@ export function GraphView({ index, project, actId, onOpenDoc, onSelectNode }: Gr
                 ...(node.status === undefined ? {} : { status: node.status }),
                 gates: gateChips(requires, index),
                 fields: cardFields(node, project),
+                dimmed: isDim(node),
                 // A beat lives inside its act's file, so the link opens that.
                 docPath: node.path,
                 open: openId === node.id,
@@ -188,7 +179,7 @@ export function GraphView({ index, project, actId, onOpenDoc, onSelectNode }: Gr
         });
 
         return { nodes: flowNodes, edges: flowEdges, bounds: boundsOf(placed, sizes) };
-    }, [index, project, actId, openId, onOpenDoc]);
+    }, [index, project, actId, cursor, openId, onOpenDoc]);
 
     return (
         <div className="canvas-wrap">
@@ -199,11 +190,14 @@ export function GraphView({ index, project, actId, onOpenDoc, onSelectNode }: Gr
     );
 }
 
-/* React Flow owns interaction state; derived data is pushed in when the index
- * changes. The viewport is set from the layout we computed rather than from
- * fitView, because every coordinate on this canvas is already known here - and
- * a fit that waits on the renderer to measure its way to the same answer is a
- * race we kept losing. */
+/* React Flow owns interaction state; derived data is pushed in when the index changes.
+ *
+ * The viewport is CONTROLLED and computed from the layout we already know, rather than
+ * asked for imperatively. Every attempt to request a fit - fitView, setViewport in an
+ * effect, inside requestAnimationFrame, gated on onInit - lost a race with something:
+ * measurement that had not happened, an instance that was not ready, or a frame callback
+ * that never fires because the window is not being composited. Passing the viewport as a
+ * value has no lifecycle to lose a race with. */
 function Flow({ derivedNodes, derivedEdges, bounds, fitKey, onSelectNode }: {
     derivedNodes: FlowNode[];
     derivedEdges: FlowEdge[];
@@ -213,29 +207,50 @@ function Flow({ derivedNodes, derivedEdges, bounds, fitKey, onSelectNode }: {
 }): React.JSX.Element {
     const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(derivedNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>(derivedEdges);
-    const { setViewport } = useReactFlow();
     const shell = useRef<HTMLDivElement>(null);
-    /* Bounds move every time a card expands. Framing on that would yank the
-     * view out from under the click, so the effect keys on the act alone and
-     * reads the current bounds through a ref. */
-    const latestBounds = useRef<Bounds | null>(bounds);
-    latestBounds.current = bounds;
+    const boundsRef = useRef<Bounds | null>(bounds);
+    boundsRef.current = bounds;
+    const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
+    /** Which act the current framing was computed for, so panning is not undone. */
+    const framed = useRef<string | null>(null);
 
     useEffect(() => { setNodes(derivedNodes); }, [derivedNodes, setNodes]);
     useEffect(() => { setEdges(derivedEdges); }, [derivedEdges, setEdges]);
 
+    /* Measured synchronously with getBoundingClientRect, deliberately.
+     *
+     * requestAnimationFrame and ResizeObserver are both callback-driven, and neither fires
+     * in a window that is not being composited - hidden, minimised, occluded. Framing the
+     * canvas is not optional decoration, so it must not depend on the compositor running.
+     * By the time an effect runs the DOM is committed, so the measurement is already good. */
     useEffect(() => {
+        if (!bounds || framed.current === fitKey) return;
         const box = shell.current?.getBoundingClientRect();
-        const b = latestBounds.current;
-        if (!b || !box || box.width === 0 || box.height === 0) return;
-        setViewport(viewportFor(b, { width: box.width, height: box.height }));
-    }, [fitKey, setViewport]);
+        if (!box || box.width === 0 || box.height === 0) return;
+        framed.current = fitKey;
+        setViewport(viewportFor(bounds, { width: box.width, height: box.height }));
+    }, [bounds, fitKey]);
+
+    /* A window resize is a real event and always fires; re-frame so a graph does not end up
+     * stranded off-screen after the window changes shape. */
+    useEffect(() => {
+        const onResize = (): void => {
+            const box = shell.current?.getBoundingClientRect();
+            const b = boundsRef.current;
+            if (!b || !box || box.width === 0 || box.height === 0) return;
+            setViewport(viewportFor(b, { width: box.width, height: box.height }));
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     return (
         <div className="flow-shell" ref={shell}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
+                viewport={viewport}
+                onViewportChange={setViewport}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 nodeTypes={nodeTypes}

@@ -8,8 +8,13 @@
 import { parse } from 'yaml';
 import type { Relation, Template } from './types.ts';
 
+/** The default vocabulary. A project may extend it in basic.json. */
+export const DEFAULT_STATUSES = ['pending', 'in-progress', 'complete'] as const;
+
 export interface Project {
     name: string;
+    /** Implementation states a beat or an object may be in, in order. */
+    statuses: string[];
     templates: Map<string, Template>;
     relations: Map<string, Relation>;
     /** Relation ids grouped by their `group`, for section queries. */
@@ -45,6 +50,7 @@ export function makeProject(
     name: string,
     templates: Template[],
     relations: Relation[] = DEFAULT_RELATIONS,
+    statuses: string[] = [...DEFAULT_STATUSES],
 ): Project {
     const groups = new Map<string, string[]>();
     for (const r of relations) {
@@ -55,6 +61,7 @@ export function makeProject(
     }
     return {
         name,
+        statuses,
         templates: new Map(templates.map((t) => [t.id, t])),
         relations: new Map(relations.map((r) => [r.id, r])),
         groups,
