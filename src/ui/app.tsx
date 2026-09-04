@@ -9,12 +9,14 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { createStore } from '../state/store.ts';
 import { DEMO_ROOT, ensureDemo, platform, type UpdateState } from '../platform/index.ts';
 import { addBeat, moveBeat, nextBeatId, removeBeat, updateBeat } from '../core/edit-doc.ts';
+import { humanise } from '../core/scaffold.ts';
 import { GraphView } from './canvas/graph.tsx';
 import { ScriptView } from './script/script.tsx';
 import { Board } from './board/board.tsx';
 import { Problems } from './problems/problems.tsx';
 import { WorldPanel } from './script/world.tsx';
 import { Editor } from './wiki/editor.tsx';
+import { Page } from './wiki/page.tsx';
 import { Explorer } from './explorer/explorer.tsx';
 import { Inspector } from './inspector/inspector.tsx';
 
@@ -22,6 +24,8 @@ const store = createStore();
 
 interface Tab { id: string; title: string; }
 type ActView = 'script' | 'flow' | 'board';
+/* A wiki reads by default; editing is a deliberate step, not the resting state. */
+type DocView = 'read' | 'edit';
 
 /** The updater's state, kept in sync with the main process. */
 function useUpdates(): UpdateState {
@@ -83,6 +87,7 @@ export function App(): React.JSX.Element {
     const [cursor, setCursor] = useState<string | null>(null);
     /** Show only beats in this state. 'all' is everything. */
     const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [docView, setDocView] = useState<DocView>('read');
 
     const open = useCallback((tab: Tab) => {
         setTabs((current) => (current.some((t) => t.id === tab.id) ? current : [...current, tab]));
@@ -97,6 +102,21 @@ export function App(): React.JSX.Element {
     const openDoc = useCallback((path: string) => {
         open({ id: `doc:${path}`, title: path.split('/').pop() ?? path });
     }, [open]);
+
+    /* Following a link by id rather than by path: an object opens its own page, a beat opens
+     * the act it lives in, since a beat has no file of its own. */
+    const openRef = useCallback((ref: string) => {
+        const index = store.getState().index;
+        if (!index) return;
+        const id = index.nodes.has(ref)
+            ? ref
+            : index.order.find((b) => index.nodes.get(b)?.locator === ref);
+        const node = id ? index.nodes.get(id) : undefined;
+        if (!node) return;
+        if (node.kind === 'act') openAct(node.id);
+        else if (node.kind === 'beat') openAct(node.id.split('#')[0]!);
+        else openDoc(node.path);
+    }, [openAct, openDoc]);
 
     // In a browser there is no folder picker worth the name, so open the demo straight away
     // - a blank grey box teaches nobody anything.
@@ -173,6 +193,7 @@ export function App(): React.JSX.Element {
                         currentTab={active}
                         onOpenAct={openAct}
                         onOpenDoc={openDoc}
+                        onOpenRef={openRef}
                     />
                 </aside>
 
@@ -248,6 +269,35 @@ export function App(): React.JSX.Element {
                         <Problems problems={state.problems} onOpenDoc={openDoc} />
                     )}
                     {activeDoc && doc && (
+                        <>
+                            <div className="centre-bar">
+                                <div className="view-switch" role="group" aria-label="View">
+                                    <button
+                                        type="button" aria-pressed={docView === 'read'}
+                                        onClick={() => setDocView('read')}
+                                    >Read</button>
+                                    <button
+                                        type="button" aria-pressed={docView === 'edit'}
+                                        onClick={() => setDocView('edit')}
+                                    >Edit</button>
+                                </div>
+                            </div>
+                            <div className="centre-body">
+                            {docView === 'read' ? (
+                                <Page
+                                    index={index}
+                                    project={project}
+                                    path={activeDoc}
+                                    text={doc.buffer ?? doc.text}
+                                    onOpenDoc={openDoc}
+                                    onOpenRef={openRef}
+                                    onCreate={(type, id) => {
+                                        void store.createEntity(type, id, humanise(id)).then((path) => {
+                                            if (path) openDoc(path);
+                                        });
+                                    }}
+                                />
+                            ) : (
                         <Editor
                             path={activeDoc}
                             text={doc.buffer ?? doc.text}
@@ -256,6 +306,9 @@ export function App(): React.JSX.Element {
                             onChange={(text) => store.setBuffer(activeDoc, text)}
                             onResolve={(keep) => store.resolveConflict(activeDoc, keep)}
                         />
+                            )}
+                            </div>
+                        </>
                     )}
                     {!activeAct && !activeDoc && active !== 'problems' && (
                         <p className="empty" style={{ padding: 'var(--s-6)' }}>Nothing open.</p>

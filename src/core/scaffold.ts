@@ -78,6 +78,15 @@ export function scaffoldProject(name: string): ScaffoldFile[] {
     return files;
 }
 
+/* An id is written for machines - kebab-case, lower - and a name is written for people.
+ * Deriving one from the other on creation saves a rename that everyone forgets to do. */
+export function humanise(id: string): string {
+    return id
+        .replace(/[-_]+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** A new object page: frontmatter for its template's fields, and room to write. */
 export function newObjectPage(template: Template, id: string, name: string): string {
     const front: Record<string, unknown> = { id, type: template.id, name, status: 'pending' };

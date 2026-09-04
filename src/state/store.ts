@@ -12,7 +12,7 @@ import { renderSections } from '../core/generate.ts';
 import { applyBlocks } from '../core/write-doc.ts';
 import { validateProject } from '../core/validate.ts';
 import type { EditResult } from '../core/edit-doc.ts';
-import { scaffoldProject } from '../core/scaffold.ts';
+import { newObjectPage, scaffoldProject } from '../core/scaffold.ts';
 import type { Problem, Relation, Template } from '../core/types.ts';
 import { platform, type FileChange } from '../platform/index.ts';
 
@@ -57,6 +57,8 @@ export interface Store {
     setBuffer(path: string, text: string): void;
     /** Apply a structured edit to a document, e.g. reordering an act's beats. */
     applyEdit(path: string, edit: (text: string, file: string) => EditResult): boolean;
+    /** Create a page for a link that points at nothing. Returns its path. */
+    createEntity(type: string, id: string, name: string): Promise<string | null>;
     resolveConflict(path: string, keep: 'mine' | 'theirs'): void;
     save(): Promise<void>;
 }
@@ -171,6 +173,28 @@ export function createStore(): Store {
 
             this.setBuffer(path, result.text);
             return true;
+        },
+
+        /* Creating a page is a deliberate act with no half-way state, so it lands on disk
+         * immediately rather than sitting in a buffer - otherwise the link that prompted it
+         * would still be dead until an unrelated save. */
+        async createEntity(type, id, name) {
+            const { root, project, index } = state;
+            if (!root || !project) return null;
+
+            const template = project.templates.get(type);
+            if (!template) return null;
+            if (index?.nodes.has(id)) return null;
+
+            const path = `entities/${type}/${id}.md`;
+            const text = newObjectPage(template, id, name);
+            await platform.write(root, path, text);
+
+            const docs = new Map(state.docs);
+            docs.set(path, { path, text });
+            state = { ...state, docs };
+            reindex();
+            return path;
         },
 
         resolveConflict(path, keep) {

@@ -44,6 +44,8 @@ src/core/         PURE. No DOM, no Electron, no fs. This is where the thinking l
   fold.ts           World state at any beat, and ordering mistakes only order can reveal.
   edit-doc.ts       Frontmatter edits (beat order, status) that keep comments and prose.
   validate.ts       Every finding, plus act rollups. Ordering rules live here.
+  render.ts         Markdown to HTML, with wikilinks as a markdown-it inline rule.
+  search.ts         Fuzzy matching and ranking.
   project.ts        Templates and the relation registry.
   generate.ts       Renders a template's declared sections into Markdown.
   scaffold.ts       What a new project starts life as.
@@ -56,6 +58,8 @@ src/platform/     The ONLY files that know Electron from browser.
 
 src/state/store.ts  One store. Docs in, index out, every view subscribes.
 src/ui/             React. canvas/ script/ board/ problems/ wiki/ explorer/ inspector/
+  wiki/page.tsx       The read view: rendered prose, backlinks, dead-link creation.
+  wiki/editor.tsx     The edit view: prose textareas, generated blocks read-only.
 src/styles/         tokens.css owns every literal value.
 test/               Flat *.test.ts, node --test.
 
@@ -80,6 +84,8 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 | How is an act's beat order changed? | `src/core/edit-doc.ts` |
 | Why is this beat being complained about? | `src/core/validate.ts` |
 | Why can I not mark this beat complete? | `canComplete` in `src/core/validate.ts` |
+| Why is that link orange with a plus? | `render.ts` - it points at no page yet |
+| Why is this search result here? | `src/core/search.ts`, and the hit's `via` |
 | Where do files actually get written? | `electron/app.js` |
 | Why is the app served from basic:// ? | `electron/app.js`, the protocol comment |
 | Why did packaging fail with EPERM? | see below - it is the dev server |
@@ -121,6 +127,11 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
   pane reports `innerWidth === 0`, every element measures 0x0, and it looks exactly like a
   broken flexbox. Several hours went into a CSS bug that did not exist. `resize_window`
   fixes it; measuring `innerWidth` first would have saved the lot.
+- **A bash heredoc will turn `\b` in a Python string into a literal backspace byte.** It
+  has happened twice: once in a doc path, once in a regex. The result looks correct in a
+  diff and is not - `/\b\w/` becomes `/<BS>\w/`, which silently matches nothing. Use a
+  Python raw string, or write the file with the Write tool. A repo-wide sweep for bytes
+  below 0x09 catches it. It happened a third time while writing this very entry.
 - **A `useRef` guard inside an effect is eaten by StrictMode.** The first invocation sets
   the guard, the second returns early, and the real render never runs. If an effect must
   run once per *thing*, key the effect on that thing.
@@ -168,7 +179,7 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 
 ## State
 
-M1, M2 and M3 are done and verified end to end.
+M1 through M4 are done and verified end to end.
 
 M1: templates, object pages, a progression document with beats, the graph index with
 provenance, generated sections, the canvas, and the editor.
@@ -180,6 +191,10 @@ the act - script and canvas both - as of a moment in time.
 M3: developer mode. The build board with derived rollups, the verify-required-to-complete
 rule enforced in the UI and checked in the core, status filtering across script and canvas,
 and a problems panel surfacing the ordering rules above.
+
+M4: the wiki. Pages render with clickable wikilinks and labelled generated sections,
+backlinks name the file and field that claimed them, fuzzy search ranks by how the match was
+made, and a link pointing at nothing offers to create the page.
 The desktop app is packaged and shipping: an NSIS installer, the renderer served over
 `basic://`, and updates from GitHub Releases. Verified in a packaged build, not just wired:
 `renderer loaded: basic://app/index.html`, and a kept 0.1.0 build found 0.1.1 on the live
@@ -245,3 +260,18 @@ the tool all need the ORDER of the progression:
 
 `test/validate.test.ts` gives every rule a fixture that trips it and the same fixture
 corrected, because a rule that only ever fires is as useless as one that never does.
+
+## Rendering someone's Markdown
+
+`render.ts` turns a page into HTML, which means it is the one place where a file becomes
+executable content. Three decisions hold it shut:
+
+- **Wikilinks are a markdown-it inline rule, not a regex over the source.** A regex would
+  cheerfully rewrite `[[this]]` inside a code fence, where it is meant to be shown rather
+  than followed. An inline rule only runs where inline markup runs.
+- **`html: false`.** Raw HTML in a page is escaped, not run. These are the user's own files,
+  but "the user's own file" is exactly what an imported or shared project is not.
+- **A link scheme allowlist.** markdown-it blocks `javascript:` by default; `SAFE_LINK` is
+  narrower still, permitting only http, https, mailto, `basic:` and fragments.
+
+`test/render.test.ts` covers all three, including the fence case and a `data:` URL.
