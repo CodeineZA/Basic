@@ -147,6 +147,16 @@ function startUpdater() {
     // Releases are published as pre-release, so without this the feed looks empty.
     autoUpdater.allowPrerelease = true;
 
+    /* We ship a full NSIS installer, never a web installer. Saying so silences a startup
+     * warning and, more usefully, stops the updater considering a download path we do not
+     * publish. It becomes the default in a later version. */
+    autoUpdater.disableWebInstaller = true;
+
+    /* Differential download stays ON. It needs the previous installer in the updater cache,
+     * which a fresh machine will not have, and it falls back to a full download on its own -
+     * so the only cost is a log line, and the win is a 2% download for a point release. */
+    autoUpdater.disableDifferentialDownload = false;
+
     autoUpdater.on('checking-for-update', () => setUpdateState({ status: 'checking' }));
     autoUpdater.on('update-not-available', () => setUpdateState({ status: 'current' }));
     autoUpdater.on('update-available', (info) => {

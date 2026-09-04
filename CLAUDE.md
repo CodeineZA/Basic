@@ -19,6 +19,9 @@ npm run electron:dev # the desktop app (expects the dev server already running)
 npm test             # node --test over the pure core. No Jest, no Vitest.
 npm run typecheck    # tsc --noEmit
 npm run build        # renderer bundle into dist/
+npm run pack         # a Windows installer into release/, published nowhere
+npm run release      # cut a GitHub Release and publish it (needs GH_TOKEN)
+npm run art          # regenerate build/icon.ico and the NSIS bitmaps
 ```
 
 Node 24 strips TypeScript natively, so `node --test test/*.test.ts` runs `.ts` with no
@@ -52,6 +55,12 @@ src/state/store.ts  One store. Docs in, index out, every view subscribes.
 src/ui/             React. canvas/ wiki/ explorer/ inspector/
 src/styles/         tokens.css owns every literal value.
 test/               Flat *.test.ts, node --test.
+
+electron-builder.yml  NSIS packaging and the GitHub publish target.
+scripts/              make-installer-art.mjs, ensure-release.mjs, finish-release.mjs
+build/                GENERATED art. Gitignored; `npm run art` rebuilds it.
+release/              GENERATED installer. Gitignored.
+dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 ```
 
 ## Which file
@@ -65,6 +74,8 @@ test/               Flat *.test.ts, node --test.
 | Why is the canvas framed like that? | `src/ui/canvas/tidy.ts` |
 | Why did the card open on click but not on drag? | `src/ui/canvas/card.tsx` |
 | Where do files actually get written? | `electron/app.js` |
+| Why is the app served from basic:// ? | `electron/app.js`, the protocol comment |
+| Why did packaging fail with EPERM? | see below - it is the dev server |
 
 ## Conventions
 
@@ -102,13 +113,30 @@ test/               Flat *.test.ts, node --test.
 - **`setWindowOpenHandler` is on `win.webContents`, not on `win`.** Calling it on the
   window throws inside the ready callback, which is an unhandled *rejection* - so nothing
   reaches the console and you get a window that never loads. The crash handlers in
-  `main.js` exist precisely to catch this class of thing; check
-  `%TEMP%\basic\startup-crash.log` before assuming Electron is broken.
+  `main.js` exist precisely to catch this class of thing. Two logs matter:
+  `%TEMP%\basic\startup-crash.log` for a failure before the app is ready, and
+  `%APPDATA%\Basic\logs\main.log` (electron-log) for everything after it.
 - **Reindexing must not clobber write refusals.** `reindex()` rebuilds `problems` from the
   index, and the index has no idea a file was refused. Write refusals live in
   `state.writeProblems` and are merged in, because "Basic declined to touch this page" is
   the single most important thing the problems list can say and it was being silently
   dropped. `test/store.test.ts` catches the regression.
+- **A running Vite dev server breaks packaging.** electron-builder extracts ~200 MB of
+  Electron into `release/win-unpacked.tmp` and then RENAMES that directory. A file watcher
+  holding handles inside it makes the rename fail with `EPERM`, and the error says nothing
+  whatsoever about a dev server - it looks like a permissions problem with the disk.
+  `vite.config.ts` now excludes `release/`, `dist-electron/`, `dist/` and `build/` from the
+  watcher, which fixes it properly. If it ever comes back, stop the dev server first.
+- **`verifyUpdateCodeSignature: false` is load-bearing while we ship unsigned.**
+  electron-updater checks a downloaded installer's Authenticode signature before running it.
+  An unsigned build has none, so with the check on every update fails verification and is
+  discarded - the app reports an update error forever and never moves a version. It flips
+  back to true the day there is a certificate.
+- **Differential updates need the PREVIOUS installer in the updater cache.** Running
+  `release/win-unpacked/Basic.exe` directly never populates that cache, so the log says
+  "Cannot download differentially, fallback to full download: ENOENT ... installer.exe".
+  That is correct behaviour, not a fault. The delta itself works - a point release computed
+  1.7 MB of changed blocks out of 94 MB.
 - **Hash the writes, do not time them.** Every write Basic makes fires its own watcher.
   `electron/app.js` records the hash of what it wrote and drops matching events. A settling
   timer is a guess about scheduler latency and it is wrong under load.
@@ -119,8 +147,11 @@ test/               Flat *.test.ts, node --test.
 
 M1 is done and verified end to end: templates, object pages, a progression document with
 beats, the graph index with provenance, generated sections, the canvas, and the editor.
-The Electron shell launches and loads the renderer (`%TEMP%\basic\main.log` confirms it);
-the browser path under Vite is what the UI was driven and screenshotted through.
+The desktop app is packaged and shipping: an NSIS installer, the renderer served over
+`basic://`, and updates from GitHub Releases. Verified in a packaged build, not just wired:
+`renderer loaded: basic://app/index.html`, and a kept 0.1.0 build found 0.1.1 on the live
+feed and downloaded it. The browser path under Vite is what the UI itself was driven and
+screenshotted through.
 M2 onwards — saved canvas layouts, multi-beat authoring, the fold, developer mode — is in
 `C:\Users\Hentu\.claude\plans\i-d-like-to-make-luminous-babbage.md`.
 
@@ -132,3 +163,35 @@ and pulling it apart to fake one has not been done.
 Not yet built: `dev/cards.html` (static specimens of every card state). The dimmed and
 broken-reference states have CSS but nothing in the app can reach them yet, so that page
 would be showing states the app cannot produce.
+
+## Releasing
+
+`npm run release` does the whole thing: create the release as a draft, generate the art,
+build the desktop renderer, package and upload, then publish only once the installer, its
+blockmap and `latest.yml` are all present. A missing asset stops it - an updater pointed at
+a release with no `latest.yml` reports an error to every user, forever.
+
+It needs `GH_TOKEN` in the environment, which `git push` does not. Read it out of Credential
+Manager rather than pasting one anywhere. From the Bash tool:
+
+```bash
+GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p') npm run release
+```
+
+Scope it to the one command. That token lands in the session's environment otherwise, where
+anything else in the session can read it.
+
+Bump `version` in package.json first and commit it, so the tag matches shipped code.
+
+## Verifying an update actually works
+
+Checking that the app "finds the feed" is not the same as checking that it updates. To prove
+the whole path, keep the old build before bumping:
+
+```bash
+cp -r release/win-unpacked /d/Claude_Projects/.scratch/basic-<old-version>
+```
+
+Bump, release, then run that kept copy and watch `%APPDATA%\Basic\logs\main.log`. It should
+report the newer version, compute a block delta, and download. This is how the pipeline was
+verified for 0.1.0 -> 0.1.1.
