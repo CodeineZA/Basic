@@ -10,6 +10,7 @@ import './styles/card.css';
 import './styles/script.css';
 import './styles/board.css';
 import './styles/page.css';
+import './styles/schema.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('no #root element to mount into');

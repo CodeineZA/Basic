@@ -75,7 +75,7 @@ const problem = (
 
 /** Everything wrong with the project, most serious first. */
 export function validateProject(index: GraphIndex, project: Project): Problem[] {
-    const out: Problem[] = [...index.problems];
+    const out: Problem[] = [...index.problems, ...validateSchema(project)];
     const position = new Map(index.order.map((id, at) => [id, at]));
 
     /* -- a beat cannot be done if done was never defined ------------------- */
@@ -187,4 +187,86 @@ export function validateProject(index: GraphIndex, project: Project): Problem[] 
 
     const rank = { error: 0, warning: 1 };
     return out.sort((a, b) => rank[a.severity] - rank[b.severity]);
+}
+
+/* -- the schema itself ------------------------------------------------------ */
+
+/* Once templates are the user's to edit, the schema can be wrong in ways that produce no
+ * broken link anywhere - a field that emits a relation nobody defined just quietly fails to
+ * appear in any backlink. These catch that class, where the symptom is an absence. */
+export function validateSchema(project: Project): Problem[] {
+    const out: Problem[] = [];
+    const types = new Set(project.templates.keys());
+    const rels = new Set(project.relations.keys());
+    const groups = new Set(project.groups.keys());
+
+    for (const template of project.templates.values()) {
+        const file = `templates/${template.id}.yaml`;
+        const seen = new Set<string>();
+
+        for (const field of template.fields) {
+            if (seen.has(field.key)) {
+                out.push(problem('error', 'template/duplicate-field',
+                    `'${template.label}' declares '${field.key}' twice; only one of them can win`,
+                    file, field.key));
+            }
+            seen.add(field.key);
+
+            const isRef = field.type === 'ref' || field.type === 'refList' || field.type === 'refQty';
+
+            if (field.rel && !rels.has(field.rel)) {
+                out.push(problem('error', 'template/unknown-relation',
+                    `'${field.label}' emits '${field.rel}', which relations.yaml does not define - nothing will link`,
+                    file, field.key));
+            }
+            for (const target of field.to ?? []) {
+                if (!types.has(target)) {
+                    out.push(problem('error', 'template/unknown-type',
+                        `'${field.label}' points at '${target}', which is not a template`,
+                        file, field.key));
+                }
+            }
+            if (isRef && !field.rel) {
+                out.push(problem('warning', 'template/ref-without-relation',
+                    `'${field.label}' is a reference but emits no relation, so filling it in links nothing`,
+                    file, field.key));
+            }
+            if (field.type === 'enum' && (field.options ?? []).length === 0) {
+                out.push(problem('warning', 'template/enum-without-options',
+                    `'${field.label}' is a choice with nothing to choose from`,
+                    file, field.key));
+            }
+        }
+
+        for (const section of template.sections ?? []) {
+            const query = 'incoming' in section.query ? section.query.incoming : section.query.outgoing;
+            const named = Array.isArray(query) ? query : [];
+            const group = Array.isArray(query) ? null : query.group;
+
+            for (const rel of named) {
+                if (!rels.has(rel)) {
+                    out.push(problem('error', 'template/unknown-relation',
+                        `section '${section.title}' queries '${rel}', which relations.yaml does not define`,
+                        file, section.key));
+                }
+            }
+            if (group && !groups.has(group)) {
+                out.push(problem('error', 'template/unknown-group',
+                    `section '${section.title}' queries the group '${group}', which no relation belongs to`,
+                    file, section.key));
+            }
+        }
+    }
+
+    /* A relation with no inverse cannot be read from the far end, which is the only way a
+     * backlink is ever phrased. */
+    for (const rel of project.relations.values()) {
+        if (!rel.inverse) {
+            out.push(problem('error', 'relation/no-inverse',
+                `'${rel.id}' has no inverse, so nothing can say how it reads from the other end`,
+                'relations.yaml', rel.id));
+        }
+    }
+
+    return out;
 }

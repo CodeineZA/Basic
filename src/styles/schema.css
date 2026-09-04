@@ -1,0 +1,238 @@
+/* The schema editors and the balancing table.
+ *
+ * A field's key and what it emits are shown, not hidden behind "advanced": a field with a
+ * relation is an assertion about the graph, and someone editing the schema should be able to
+ * see that without opening the YAML. */
+
+.schema {
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--s-5) var(--s-6) var(--s-7);
+    max-width: 900px;
+}
+
+.schema-head {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--s-5);
+    flex-wrap: wrap;
+    margin-bottom: var(--s-5);
+    padding-bottom: var(--s-4);
+    border-bottom: 1px solid var(--line);
+}
+
+.schema-head .panel-title { margin: 0; flex: 1; min-width: 180px; }
+
+.schema-meta { display: flex; flex-direction: column; gap: var(--s-2); }
+.schema-meta input[type="color"] { width: 56px; height: var(--hit); padding: 2px; }
+
+.schema input[type="text"],
+.schema input:not([type]),
+.schema select {
+    min-height: var(--hit);
+    padding: 0 var(--s-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink);
+    /* Never below 16px: iOS zooms the page on focus otherwise. */
+    font: var(--fs-input) var(--font);
+}
+
+.schema input:focus, .schema select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 var(--ring) color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.schema .label {
+    display: block;
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    margin-bottom: var(--s-1);
+}
+
+/* -- fields ---------------------------------------------------------------- */
+
+.field-list { list-style: none; margin: 0 0 var(--s-4); padding: 0; }
+
+.field-row-edit {
+    padding: var(--s-3) var(--s-4);
+    margin-bottom: var(--s-3);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--panel);
+}
+
+.field-line {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+}
+
+.field-label-input { flex: 1; min-width: 0; font-weight: 600; }
+.field-label-input.as-text { font-size: var(--fs-md); }
+
+.field-controls { display: flex; gap: var(--s-1); flex: none; }
+
+.field-hint {
+    margin: var(--s-2) 0 0;
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+}
+
+.field-hint .is-warn { color: var(--warn); }
+.field-hint .rule { font-family: var(--mono); }
+
+.field-extra {
+    display: flex;
+    gap: var(--s-4);
+    flex-wrap: wrap;
+    margin-top: var(--s-3);
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--line);
+}
+
+.field-extra label { display: block; }
+
+.field-add {
+    display: flex;
+    gap: var(--s-3);
+    align-items: center;
+    margin-bottom: var(--s-6);
+}
+
+.field-add input { flex: 1; }
+.field-add.is-pair { flex-wrap: wrap; }
+.field-add.is-pair input { min-width: 220px; }
+
+.rel-id { flex: 1; font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink-2); }
+
+/* -- the balancing table --------------------------------------------------- */
+
+.table-view {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: var(--s-5) var(--s-6) var(--s-5);
+}
+
+.table-view .schema-head { flex: none; }
+
+/* Wide content scrolls inside its own box; the page never scrolls sideways. */
+.table-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+
+.grid {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    font-size: var(--fs-sm);
+}
+
+.grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line-strong);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.th-sort {
+    width: 100%;
+    min-height: var(--hit);
+    padding: 0 var(--s-3);
+    border: none;
+    background: none;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: left;
+    cursor: pointer;
+}
+
+.th-sort:hover { color: var(--ink); background: var(--sunken); }
+
+.grid tbody th {
+    position: sticky;
+    left: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: var(--s-2) var(--s-3);
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.grid td {
+    padding: 0;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+}
+
+.grid tbody tr:hover td { background: var(--panel-2); }
+
+.grid td input[type="text"],
+.grid td input[type="number"],
+.grid td select {
+    width: 100%;
+    min-width: 90px;
+    min-height: 32px;
+    padding: 0 var(--s-3);
+    border: none;
+    background: none;
+    color: var(--ink);
+    font: var(--fs-sm) var(--font);
+}
+
+.grid td input:focus, .grid td select:focus {
+    outline: none;
+    background: var(--panel);
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.grid td input[type="number"] { font-variant-numeric: tabular-nums; text-align: right; }
+.grid td input[type="checkbox"] { margin: var(--s-2) var(--s-3); }
+
+/* A cell that is shown but not edited says so by being plainly inert. */
+.grid td.is-readonly {
+    padding: var(--s-2) var(--s-3);
+    color: var(--ink-2);
+    background: var(--sunken);
+}
+
+.grid td .is-unset { color: var(--ink-3); }
+
+/* -- explorer additions ----------------------------------------------------- */
+
+.tree-group.with-action {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-3);
+}
+
+.tree-group.with-action .link-btn {
+    font-size: var(--fs-xs);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.tree-item .count {
+    margin-left: auto;
+    font-size: var(--fs-xs);
+    font-variant-numeric: tabular-nums;
+}

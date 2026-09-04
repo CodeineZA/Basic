@@ -46,6 +46,7 @@ src/core/         PURE. No DOM, no Electron, no fs. This is where the thinking l
   validate.ts       Every finding, plus act rollups. Ordering rules live here.
   render.ts         Markdown to HTML, with wikilinks as a markdown-it inline rule.
   search.ts         Fuzzy matching and ranking.
+  edit-schema.ts    Editing templates and relations, comments intact.
   project.ts        Templates and the relation registry.
   generate.ts       Renders a template's declared sections into Markdown.
   scaffold.ts       What a new project starts life as.
@@ -57,7 +58,7 @@ src/platform/     The ONLY files that know Electron from browser.
   demo.ts           The project opened on first run, built by the real scaffolder.
 
 src/state/store.ts  One store. Docs in, index out, every view subscribes.
-src/ui/             React. canvas/ script/ board/ problems/ wiki/ explorer/ inspector/
+src/ui/             React. canvas/ script/ board/ problems/ wiki/ schema/ table/ explorer/
   wiki/page.tsx       The read view: rendered prose, backlinks, dead-link creation.
   wiki/editor.tsx     The edit view: prose textareas, generated blocks read-only.
 src/styles/         tokens.css owns every literal value.
@@ -86,6 +87,8 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 | Why can I not mark this beat complete? | `canComplete` in `src/core/validate.ts` |
 | Why is that link orange with a plus? | `render.ts` - it points at no page yet |
 | Why is this search result here? | `src/core/search.ts`, and the hit's `via` |
+| How do I add a field to a kind of thing? | The template editor, or `src/core/edit-schema.ts` |
+| Why does filling in a field create a link? | The field's `rel` - see the template editor |
 | Where do files actually get written? | `electron/app.js` |
 | Why is the app served from basic:// ? | `electron/app.js`, the protocol comment |
 | Why did packaging fail with EPERM? | see below - it is the dev server |
@@ -179,7 +182,7 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 
 ## State
 
-M1 through M4 are done and verified end to end.
+M1 through M5 are done and verified end to end.
 
 M1: templates, object pages, a progression document with beats, the graph index with
 provenance, generated sections, the canvas, and the editor.
@@ -195,6 +198,10 @@ and a problems panel surfacing the ordering rules above.
 M4: the wiki. Pages render with clickable wikilinks and labelled generated sections,
 backlinks name the file and field that claimed them, fuzzy search ranks by how the match was
 made, and a link pointing at nothing offers to create the page.
+
+M5: authoring the schema. Templates and relations are edited in the app, new kinds of thing
+are created from the explorer, and a table view puts every thing of one kind side by side
+with its scalar fields editable for balancing.
 The desktop app is packaged and shipping: an NSIS installer, the renderer served over
 `basic://`, and updates from GitHub Releases. Verified in a packaged build, not just wired:
 `renderer loaded: basic://app/index.html`, and a kept 0.1.0 build found 0.1.1 on the live
@@ -275,3 +282,24 @@ executable content. Three decisions hold it shut:
   narrower still, permitting only http, https, mailto, `basic:` and fragments.
 
 `test/render.test.ts` covers all three, including the fence case and a `data:` URL.
+
+## The schema is the user's
+
+The whole brief rests on one sentence: *not all characters have the same properties*. So a
+template is not a built-in — it is a YAML file the user edits, in the app, and every form,
+dropdown, table column and generated section follows from it.
+
+A field is not just a form input. A field with a `rel` **is an assertion about the graph**,
+so the editor says so in words rather than hiding it: choosing a relation reads "Character
+sells it", and the hint underneath a reference field says filling it in emits a relation.
+
+`updateTemplateField` clears `to` and `rel` when a field stops being a reference, and
+`options` when it stops being a choice. Otherwise the file keeps claiming a relation the
+field can no longer carry — a lie that produces no error anywhere, just a link that never
+appears. `validateSchema` catches the rest of that class: a field emitting a relation nobody
+defined, a `to` naming no template, a section querying a group no relation belongs to, and a
+relation with no inverse, since a backlink is the inverse read from the far end.
+
+The table view edits scalars in place and shows references read-only. A reference is an
+assertion and belongs where it is asserted, not in a spreadsheet cell that would quietly
+rewrite someone's frontmatter.

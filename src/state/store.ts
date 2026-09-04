@@ -13,6 +13,7 @@ import { applyBlocks } from '../core/write-doc.ts';
 import { validateProject } from '../core/validate.ts';
 import type { EditResult } from '../core/edit-doc.ts';
 import { newObjectPage, scaffoldProject } from '../core/scaffold.ts';
+import { newTemplateFile } from '../core/edit-schema.ts';
 import type { Problem, Relation, Template } from '../core/types.ts';
 import { platform, type FileChange } from '../platform/index.ts';
 
@@ -59,6 +60,8 @@ export interface Store {
     applyEdit(path: string, edit: (text: string, file: string) => EditResult): boolean;
     /** Create a page for a link that points at nothing. Returns its path. */
     createEntity(type: string, id: string, name: string): Promise<string | null>;
+    /** Create a new kind of thing. Returns the template's path. */
+    createTemplate(id: string, label: string): Promise<string | null>;
     resolveConflict(path: string, keep: 'mine' | 'theirs'): void;
     save(): Promise<void>;
 }
@@ -188,6 +191,23 @@ export function createStore(): Store {
 
             const path = `entities/${type}/${id}.md`;
             const text = newObjectPage(template, id, name);
+            await platform.write(root, path, text);
+
+            const docs = new Map(state.docs);
+            docs.set(path, { path, text });
+            state = { ...state, docs };
+            reindex();
+            return path;
+        },
+
+        /* A new kind of thing. Written straight away for the same reason a page is: the
+         * explorer, the palette and every type dropdown should show it at once. */
+        async createTemplate(id, label) {
+            const { root, project } = state;
+            if (!root || !project || project.templates.has(id)) return null;
+
+            const path = `templates/${id}.yaml`;
+            const text = newTemplateFile(id, label);
             await platform.write(root, path, text);
 
             const docs = new Map(state.docs);

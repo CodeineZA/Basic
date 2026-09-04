@@ -163,3 +163,27 @@ export function nextBeatId(existing: readonly string[]): string {
     }
     return `beat_${Date.now()}`;
 }
+
+/* -- object fields ---------------------------------------------------------- */
+
+/* Setting a template field on an object page. The table view uses this to edit a column of
+ * values in place, which is the whole point of having a table: balancing is comparing
+ * numbers side by side and nudging them, not opening thirty files. */
+export function setFrontmatterField(
+    text: string,
+    key: string,
+    value: unknown,
+    file?: string,
+): EditResult {
+    return editFrontmatter(text, (doc) => {
+        // An empty value clears the key rather than writing an empty string into the graph.
+        if (value === null || value === '') {
+            if (!doc.has(key)) return false;
+            doc.delete(key);
+            return true;
+        }
+        if (JSON.stringify(doc.get(key)) === JSON.stringify(value)) return false;
+        doc.set(key, doc.createNode(value));
+        return true;
+    }, file);
+}

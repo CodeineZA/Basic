@@ -8,6 +8,7 @@ import type { Project } from '../../core/project.ts';
 import type { DocNode } from '../../core/types.ts';
 import { rollupOf } from '../../core/validate.ts';
 import { searchProject, type Hit } from '../../core/search.ts';
+import { fieldKey } from '../../core/edit-schema.ts';
 
 export interface ExplorerProps {
     index: GraphIndex;
@@ -16,6 +17,10 @@ export interface ExplorerProps {
     onOpenAct: (actId: string) => void;
     onOpenDoc: (path: string) => void;
     onOpenRef: (id: string) => void;
+    onOpenTemplate: (id: string) => void;
+    onOpenRelations: () => void;
+    onOpenTable: (type: string) => void;
+    onCreateTemplate: (id: string, label: string) => void;
 }
 
 /** Show which letters matched, so a fuzzy result does not look like a random one. */
@@ -29,7 +34,9 @@ function Highlight({ text, positions }: { text: string; positions: number[] }): 
     );
 }
 
-export function Explorer({ index, project, currentTab, onOpenAct, onOpenDoc, onOpenRef }: ExplorerProps): React.JSX.Element {
+export function Explorer(props: ExplorerProps): React.JSX.Element {
+    const { index, project, currentTab, onOpenAct, onOpenDoc, onOpenRef } = props;
+    const [newType, setNewType] = useState('');
     const [query, setQuery] = useState('');
 
     const hits = useMemo(
@@ -133,7 +140,16 @@ export function Explorer({ index, project, currentTab, onOpenAct, onOpenDoc, onO
                         const template = project.templates.get(type);
                         return (
                             <div key={type}>
-                                <p className="tree-group">{template?.label ?? type}</p>
+                                <p className="tree-group with-action">
+                                    <span>{template?.label ?? type}</span>
+                                    {/* Balancing wants every one of them side by side. */}
+                                    <button
+                                        type="button"
+                                        className="link-btn"
+                                        title={`See every ${(template?.label ?? type).toLowerCase()} in a table`}
+                                        onClick={() => props.onOpenTable(type)}
+                                    >table</button>
+                                </p>
                                 <ul className="tree">
                                     {list.sort((a, b) => a.name.localeCompare(b.name)).map((node) => (
                                         <li key={node.id}>
@@ -155,6 +171,56 @@ export function Explorer({ index, project, currentTab, onOpenAct, onOpenDoc, onO
                             </div>
                         );
                     })}
+
+                    <p className="tree-group">Schema</p>
+                    <ul className="tree">
+                        {[...project.templates.values()].map((t) => (
+                            <li key={t.id}>
+                                <button
+                                    type="button"
+                                    className="tree-item"
+                                    aria-current={currentTab === `tpl:${t.id}`}
+                                    onClick={() => props.onOpenTemplate(t.id)}
+                                >
+                                    <span
+                                        className="swatch"
+                                        style={{ '--card-accent': t.color ?? 'var(--accent)' } as React.CSSProperties}
+                                    />
+                                    <span>{t.label} template</span>
+                                    <span className="muted count">{t.fields.length}</span>
+                                </button>
+                            </li>
+                        ))}
+                        <li>
+                            <button
+                                type="button"
+                                className="tree-item"
+                                aria-current={currentTab === 'relations'}
+                                onClick={props.onOpenRelations}
+                            >
+                                <span className="swatch" style={{ '--card-accent': 'var(--ink-3)' } as React.CSSProperties} />
+                                <span>Relations</span>
+                                <span className="muted count">{project.relations.size}</span>
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div className="field-add" style={{ marginBottom: 'var(--s-5)' }}>
+                        <input
+                            value={newType}
+                            placeholder="New kind of thing…"
+                            aria-label="Name a new kind of thing"
+                            onChange={(e) => setNewType(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key !== 'Enter') return;
+                                const label = newType.trim();
+                                const id = fieldKey(label);
+                                if (!label || !id || project.templates.has(id)) return;
+                                props.onCreateTemplate(id, label);
+                                setNewType('');
+                            }}
+                        />
+                    </div>
                 </>
             )}
         </>

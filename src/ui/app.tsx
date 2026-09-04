@@ -14,6 +14,14 @@ import { GraphView } from './canvas/graph.tsx';
 import { ScriptView } from './script/script.tsx';
 import { Board } from './board/board.tsx';
 import { Problems } from './problems/problems.tsx';
+import { TemplateEditor } from './schema/template-editor.tsx';
+import { RelationsEditor } from './schema/relations-editor.tsx';
+import { TableView } from './table/table.tsx';
+import {
+    addRelation, addTemplateField, moveTemplateField, removeRelation, removeTemplateField,
+    removeTemplateSection, setTemplateMeta, updateRelation, updateTemplateField,
+} from '../core/edit-schema.ts';
+import { setFrontmatterField } from '../core/edit-doc.ts';
 import { WorldPanel } from './script/world.tsx';
 import { Editor } from './wiki/editor.tsx';
 import { Page } from './wiki/page.tsx';
@@ -148,6 +156,8 @@ export function App(): React.JSX.Element {
     const { index, project } = state;
     const activeDoc = active?.startsWith('doc:') ? active.slice(4) : null;
     const activeAct = active?.startsWith('act:') ? active.slice(4) : null;
+    const activeTemplate = active?.startsWith('tpl:') ? active.slice(4) : null;
+    const activeTable = active?.startsWith('table:') ? active.slice(6) : null;
     const doc = activeDoc ? state.docs.get(activeDoc) : undefined;
 
     /* Beat edits go through the store's buffer, so the script view, the canvas and any open
@@ -158,6 +168,15 @@ export function App(): React.JSX.Element {
 
     const editAct = (fn: (text: string, file: string) => ReturnType<typeof moveBeat>): void => {
         if (actPath) store.applyEdit(actPath, fn);
+    };
+
+    /* Schema files go through the same buffered edit as everything else, so a template
+     * change shows up in every form and dropdown before it reaches disk. */
+    const editTemplate = (id: string, fn: (text: string, file: string) => ReturnType<typeof moveBeat>): void => {
+        store.applyEdit(`templates/${id}.yaml`, fn);
+    };
+    const editRelations = (fn: (text: string, file: string) => ReturnType<typeof moveBeat>): void => {
+        store.applyEdit('relations.yaml', fn);
     };
 
     return (
@@ -194,6 +213,14 @@ export function App(): React.JSX.Element {
                         onOpenAct={openAct}
                         onOpenDoc={openDoc}
                         onOpenRef={openRef}
+                        onOpenTemplate={(id) => open({ id: `tpl:${id}`, title: `${project.templates.get(id)?.label ?? id} template` })}
+                        onOpenRelations={() => open({ id: 'relations', title: 'Relations' })}
+                        onOpenTable={(type) => open({ id: `table:${type}`, title: `All ${project.templates.get(type)?.label?.toLowerCase() ?? type}` })}
+                        onCreateTemplate={(id, label) => {
+                            void store.createTemplate(id, label).then(() => {
+                                open({ id: `tpl:${id}`, title: `${label} template` });
+                            });
+                        }}
                     />
                 </aside>
 
@@ -265,6 +292,36 @@ export function App(): React.JSX.Element {
                             </div>
                         </>
                     )}
+                    {activeTemplate && project.templates.get(activeTemplate) && (
+                        <TemplateEditor
+                            project={project}
+                            template={project.templates.get(activeTemplate)!}
+                            onSetMeta={(patch) => editTemplate(activeTemplate, (t, f) => setTemplateMeta(t, patch, f))}
+                            onAddField={(field) => editTemplate(activeTemplate, (t, f) => addTemplateField(t, field, undefined, f))}
+                            onUpdateField={(key, patch) => editTemplate(activeTemplate, (t, f) => updateTemplateField(t, key, patch, f))}
+                            onMoveField={(key, delta) => editTemplate(activeTemplate, (t, f) => moveTemplateField(t, key, delta, f))}
+                            onRemoveField={(key) => editTemplate(activeTemplate, (t, f) => removeTemplateField(t, key, f))}
+                            onRemoveSection={(key) => editTemplate(activeTemplate, (t, f) => removeTemplateSection(t, key, f))}
+                        />
+                    )}
+                    {active === 'relations' && (
+                        <RelationsEditor
+                            project={project}
+                            onAdd={(rel) => editRelations((t, f) => addRelation(t, rel, f))}
+                            onUpdate={(id, patch) => editRelations((t, f) => updateRelation(t, id, patch, f))}
+                            onRemove={(id) => editRelations((t, f) => removeRelation(t, id, f))}
+                        />
+                    )}
+                    {activeTable && (
+                        <TableView
+                            index={index}
+                            project={project}
+                            type={activeTable}
+                            onOpenDoc={openDoc}
+                            onSetField={(path, key, value) =>
+                                store.applyEdit(path, (t, f) => setFrontmatterField(t, key, value, f))}
+                        />
+                    )}
                     {active === 'problems' && (
                         <Problems problems={state.problems} onOpenDoc={openDoc} />
                     )}
@@ -310,7 +367,7 @@ export function App(): React.JSX.Element {
                             </div>
                         </>
                     )}
-                    {!activeAct && !activeDoc && active !== 'problems' && (
+                    {!activeAct && !activeDoc && !activeTemplate && !activeTable && active !== 'problems' && active !== 'relations' && (
                         <p className="empty" style={{ padding: 'var(--s-6)' }}>Nothing open.</p>
                     )}
                 </main>
