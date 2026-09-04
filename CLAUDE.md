@@ -47,6 +47,8 @@ src/core/         PURE. No DOM, no Electron, no fs. This is where the thinking l
   render.ts         Markdown to HTML, with wikilinks as a markdown-it inline rule.
   search.ts         Fuzzy matching and ranking.
   edit-schema.ts    Editing templates and relations, comments intact.
+  canvas.ts         Canvas documents: positions, sketches, and what gets drawn.
+  promote.ts        Turning a drawn line into something a file actually says.
   project.ts        Templates and the relation registry.
   generate.ts       Renders a template's declared sections into Markdown.
   scaffold.ts       What a new project starts life as.
@@ -89,6 +91,8 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 | Why is this search result here? | `src/core/search.ts`, and the hit's `via` |
 | How do I add a field to a kind of thing? | The template editor, or `src/core/edit-schema.ts` |
 | Why does filling in a field create a link? | The field's `rel` - see the template editor |
+| Why can I not promote this line? | `planPromotion` in `src/core/promote.ts` - it says why |
+| Where did my card positions go? | `canvases/<id>.json` |
 | Where do files actually get written? | `electron/app.js` |
 | Why is the app served from basic:// ? | `electron/app.js`, the protocol comment |
 | Why did packaging fail with EPERM? | see below - it is the dev server |
@@ -126,6 +130,18 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
   minimised, occluded, or a headless preview pane. The canvas framing sat in a rAF for a
   while and simply never ran. `getBoundingClientRect` inside a `useEffect` is synchronous,
   the DOM is already committed by then, and it works whether or not anything is painting.
+- **`overflow: hidden` on a node clips React Flow's connection handles.** Handles sit half
+  outside the node by design. Clipping them leaves an unhittable sliver, so every attempt to
+  drag a connection grabs the pane instead and silently pans the canvas - which reads as
+  "dragging does not work". Diagnose it with
+  `document.elementFromPoint(cx, cy) === handleElement`; if that is false the handle is
+  covered, whatever the screenshot suggests.
+- **A canvas renders nothing measurable while the window is hidden.** React Flow learns node
+  and handle geometry from a ResizeObserver, which does not fire without compositing, so
+  edges are absent from the DOM even though they are in state. Querying the DOM from
+  JavaScript will report zero edges and look exactly like a regression. Take a screenshot
+  first - it forces a paint - and only then believe what the DOM says. This cost most of an
+  afternoon twice, the second time convinced of a regression that did not exist.
 - **Check the viewport is not 0x0 before believing any measurement.** A collapsed preview
   pane reports `innerWidth === 0`, every element measures 0x0, and it looks exactly like a
   broken flexbox. Several hours went into a CSS bug that did not exist. `resize_window`
@@ -202,6 +218,10 @@ made, and a link pointing at nothing offers to create the page.
 M5: authoring the schema. Templates and relations are edited in the app, new kinds of thing
 are created from the explorer, and a table view puts every thing of one kind side by side
 with its scalar fields editable for balancing.
+
+Canvas authoring: canvas documents you build on. Drag from the palette to place or create,
+drag between handles to draw a line, and promote a line into a real relationship that is
+written into the document that owns it. Positions persist in `canvases/<id>.json`.
 The desktop app is packaged and shipping: an NSIS installer, the renderer served over
 `basic://`, and updates from GitHub Releases. Verified in a packaged build, not just wired:
 `renderer loaded: basic://app/index.html`, and a kept 0.1.0 build found 0.1.1 on the live
@@ -303,3 +323,22 @@ relation with no inverse, since a backlink is the inverse read from the far end.
 The table view edits scalars in place and shows references read-only. A reference is an
 assertion and belongs where it is asserted, not in a spreadsheet cell that would quietly
 rewrite someone's frontmatter.
+
+## Two canvases, on purpose
+
+The act's **Flow** view is a picture of what the files already say, laid out automatically.
+Nothing is stored; open it and it tidies itself. It answers "how does this act hang
+together".
+
+A **canvas document** is the other thing: you choose what is on it and where, and the layout
+is saved. It answers "let me work this out".
+
+Both draw the same way, and the rule that keeps either from lying is in `drawnEdges`: real
+relationships are read from the index, and the canvas file only holds positions, lines that
+have not been promoted yet, and gates. A promoted edge is therefore drawn once, from the
+file that asserts it - `test/canvas.test.ts` pins that down, including the case where a
+leftover sketch sits alongside the real thing.
+
+Promotion refuses with the fix rather than hiding the option. "No field on the Character
+template means Drops" is the moment someone discovers their schema is missing something; a
+greyed-out menu item teaches nothing.

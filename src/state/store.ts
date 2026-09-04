@@ -14,6 +14,9 @@ import { validateProject } from '../core/validate.ts';
 import type { EditResult } from '../core/edit-doc.ts';
 import { newObjectPage, scaffoldProject } from '../core/scaffold.ts';
 import { newTemplateFile } from '../core/edit-schema.ts';
+import {
+    canvasPath, newCanvas, parseCanvas, serialiseCanvas, type CanvasDoc,
+} from '../core/canvas.ts';
 import type { Problem, Relation, Template } from '../core/types.ts';
 import { platform, type FileChange } from '../platform/index.ts';
 
@@ -62,6 +65,13 @@ export interface Store {
     createEntity(type: string, id: string, name: string): Promise<string | null>;
     /** Create a new kind of thing. Returns the template's path. */
     createTemplate(id: string, label: string): Promise<string | null>;
+    /** Canvas ids in the project. */
+    canvasIds(): string[];
+    /** A canvas document, or null when there is no such file. */
+    canvasDoc(id: string): CanvasDoc | null;
+    /** Change a canvas. Buffered like every other edit, so one save writes it. */
+    updateCanvas(id: string, change: (canvas: CanvasDoc) => CanvasDoc): void;
+    createCanvas(id: string, name: string): Promise<string | null>;
     resolveConflict(path: string, keep: 'mine' | 'theirs'): void;
     save(): Promise<void>;
 }
@@ -208,6 +218,49 @@ export function createStore(): Store {
 
             const path = `templates/${id}.yaml`;
             const text = newTemplateFile(id, label);
+            await platform.write(root, path, text);
+
+            const docs = new Map(state.docs);
+            docs.set(path, { path, text });
+            state = { ...state, docs };
+            reindex();
+            return path;
+        },
+
+        canvasIds() {
+            return [...state.docs.keys()]
+                .filter((p) => p.startsWith('canvases/') && p.endsWith('.json'))
+                .map((p) => p.slice('canvases/'.length, -'.json'.length))
+                .sort();
+        },
+
+        canvasDoc(id) {
+            const doc = state.docs.get(canvasPath(id));
+            return doc ? parseCanvas(id, doc.buffer ?? doc.text) : null;
+        },
+
+        /* Layout is data like anything else: it goes through the buffer, so moving a card
+         * marks the tab dirty and one save writes it alongside every other change. */
+        updateCanvas(id, change) {
+            const path = canvasPath(id);
+            const doc = state.docs.get(path);
+            if (!doc) return;
+
+            const before = parseCanvas(id, doc.buffer ?? doc.text);
+            const after = change(before);
+            if (after === before) return;
+
+            const text = serialiseCanvas(after);
+            if (text === (doc.buffer ?? doc.text)) return;
+            this.setBuffer(path, text);
+        },
+
+        async createCanvas(id, name) {
+            const { root } = state;
+            if (!root || state.docs.has(canvasPath(id))) return null;
+
+            const path = canvasPath(id);
+            const text = serialiseCanvas(newCanvas(id, name));
             await platform.write(root, path, text);
 
             const docs = new Map(state.docs);

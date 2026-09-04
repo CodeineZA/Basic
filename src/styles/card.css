@@ -36,7 +36,10 @@
     box-shadow: var(--shadow-1);
     color: var(--ink);
     font-size: var(--fs-sm);
-    overflow: hidden;
+    /* NOT overflow:hidden. Connection handles sit half outside the card by design, and
+     * clipping them leaves an unhittable sliver - every attempt to drag a connection grabs
+     * the pane instead and silently pans the canvas. The collapsed body is display:none, so
+     * there is nothing to clip anyway. */
     transition: border-color var(--motion), box-shadow var(--motion);
 }
 
@@ -61,6 +64,7 @@
 }
 
 .card-head {
+    border-radius: var(--radius) var(--radius) 0 0;
     display: flex;
     align-items: center;
     gap: var(--s-3);
@@ -230,18 +234,24 @@
 /* -- handles -------------------------------------------------------------- */
 
 .react-flow__handle {
-    width: 11px;
-    height: 11px;
+    width: 12px;
+    height: 12px;
     border: 1px solid var(--panel);
     background: var(--line-strong);
-    opacity: 0;
-    transition: opacity var(--motion), background var(--motion);
+    /* Visible at rest, not hidden until hover: a connection point you cannot see is one you
+     * cannot aim at, and missing it pans the canvas instead - which reads as the drag
+     * silently not working. */
+    opacity: 0.45;
+    transition: opacity var(--motion), background var(--motion), transform var(--motion);
 }
 
 .card:hover .react-flow__handle,
 .card.is-selected .react-flow__handle { opacity: 1; }
 
-.react-flow__handle:hover { background: var(--accent); }
+.react-flow__handle:hover {
+    background: var(--accent);
+    transform: scale(1.35);
+}
 
 /* -- edges ---------------------------------------------------------------- */
 

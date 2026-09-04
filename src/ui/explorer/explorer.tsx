@@ -21,6 +21,9 @@ export interface ExplorerProps {
     onOpenRelations: () => void;
     onOpenTable: (type: string) => void;
     onCreateTemplate: (id: string, label: string) => void;
+    canvases: string[];
+    onOpenCanvas: (id: string) => void;
+    onCreateCanvas: (id: string, name: string) => void;
 }
 
 /** Show which letters matched, so a fuzzy result does not look like a random one. */
@@ -37,6 +40,7 @@ function Highlight({ text, positions }: { text: string; positions: number[] }): 
 export function Explorer(props: ExplorerProps): React.JSX.Element {
     const { index, project, currentTab, onOpenAct, onOpenDoc, onOpenRef } = props;
     const [newType, setNewType] = useState('');
+    const [newCanvasName, setNewCanvasName] = useState('');
     const [query, setQuery] = useState('');
 
     const hits = useMemo(
@@ -135,6 +139,42 @@ export function Explorer(props: ExplorerProps): React.JSX.Element {
                             );
                         })}
                     </ul>
+
+                    <p className="tree-group">Canvases</p>
+                    <ul className="tree">
+                        {props.canvases.length === 0 && (
+                            <li className="empty">None yet. A canvas is a page you build on.</li>
+                        )}
+                        {props.canvases.map((id) => (
+                            <li key={id}>
+                                <button
+                                    type="button"
+                                    className="tree-item"
+                                    aria-current={currentTab === `canvas:${id}`}
+                                    onClick={() => props.onOpenCanvas(id)}
+                                >
+                                    <span className="swatch" style={{ '--card-accent': 'var(--ok)' } as React.CSSProperties} />
+                                    <span>{id}</span>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                    <div className="field-add">
+                        <input
+                            value={newCanvasName}
+                            placeholder="New canvas…"
+                            aria-label="Name a new canvas"
+                            onChange={(e) => setNewCanvasName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key !== 'Enter') return;
+                                const name = newCanvasName.trim();
+                                const id = fieldKey(name).replace(/_/g, '-');
+                                if (!name || !id) return;
+                                props.onCreateCanvas(id, name);
+                                setNewCanvasName('');
+                            }}
+                        />
+                    </div>
 
                     {[...byType.entries()].sort().map(([type, list]) => {
                         const template = project.templates.get(type);

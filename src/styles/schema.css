@@ -236,3 +236,74 @@
     font-size: var(--fs-xs);
     font-variant-numeric: tabular-nums;
 }
+
+/* -- canvas authoring ------------------------------------------------------- */
+
+.tree-item.is-draggable { cursor: grab; }
+.tree-item.is-draggable:active { cursor: grabbing; }
+
+.tree-item .grip { margin-left: auto; color: var(--ink-3); font-size: var(--fs-xs); flex: none; }
+
+/* Already on the canvas: shown, plainly inert, and it says why with a tick. */
+.tree-item.is-placed { opacity: 0.5; cursor: default; }
+.tree-item.is-placed:hover { background: none; color: var(--ink-2); }
+
+.canvas-empty {
+    position: absolute;
+    inset: auto 0 auto 0;
+    top: 40%;
+    z-index: 2;
+    margin: 0 auto;
+    max-width: 34ch;
+    padding: var(--s-4);
+    text-align: center;
+    color: var(--ink-3);
+    font-size: var(--fs-sm);
+    pointer-events: none;
+}
+
+.promote-list { list-style: none; margin: var(--s-3) 0 0; padding: 0; }
+
+.promote-list li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-2) 0;
+}
+
+.promote-list .btn { align-self: flex-start; }
+
+/* Says what will be written before it is written. */
+.promote-what {
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+    overflow-wrap: anywhere;
+}
+
+.promote-why { margin-top: var(--s-5); font-size: var(--fs-sm); }
+.promote-why summary { cursor: pointer; color: var(--ink-3); }
+.promote-why ul { margin: var(--s-3) 0 0; padding-left: var(--s-5); color: var(--ink-2); }
+.promote-why li { margin-bottom: var(--s-2); font-size: var(--fs-xs); }
+
+.gate-row { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+
+.gate-row select, .gate-row input {
+    min-height: var(--hit);
+    padding: 0 var(--s-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink);
+    font: var(--fs-input) var(--font);
+}
+
+.gate-row input { flex: 1; min-width: 120px; }
+
+.sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}

@@ -7,10 +7,18 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createStore } from '../state/store.ts';
+import type { GraphIndex } from '../core/index-graph.ts';
 import { DEMO_ROOT, ensureDemo, platform, type UpdateState } from '../platform/index.ts';
 import { addBeat, moveBeat, nextBeatId, removeBeat, updateBeat } from '../core/edit-doc.ts';
 import { humanise } from '../core/scaffold.ts';
 import { GraphView } from './canvas/graph.tsx';
+import { AuthoredCanvas } from './canvas/authored.tsx';
+import { Palette, NEW_PREFIX } from './canvas/palette.tsx';
+import { EdgeInspector } from './canvas/edge-inspector.tsx';
+import {
+    addSketch, moveNode, placeNode, removeEdge, removeNode, setRequirement, type DrawnEdge,
+} from '../core/canvas.ts';
+import { planDemotion, planPromotion } from '../core/promote.ts';
 import { ScriptView } from './script/script.tsx';
 import { Board } from './board/board.tsx';
 import { Problems } from './problems/problems.tsx';
@@ -31,6 +39,18 @@ import { Inspector } from './inspector/inspector.tsx';
 const store = createStore();
 
 interface Tab { id: string; title: string; }
+
+/* Which file a tab is a view of. Every tab kind has one except the problems list, which is
+ * a view of everything - so the unsaved dot works the same everywhere. */
+function fileForTab(id: string, index: GraphIndex): string | null {
+    if (id.startsWith('doc:')) return id.slice(4);
+    if (id.startsWith('canvas:')) return `canvases/${id.slice(7)}.json`;
+    if (id.startsWith('tpl:')) return `templates/${id.slice(4)}.yaml`;
+    if (id.startsWith('table:')) return null;
+    if (id === 'relations') return 'relations.yaml';
+    if (id.startsWith('act:')) return index.nodes.get(id.slice(4))?.path ?? null;
+    return null;
+}
 type ActView = 'script' | 'flow' | 'board';
 /* A wiki reads by default; editing is a deliberate step, not the resting state. */
 type DocView = 'read' | 'edit';
@@ -96,6 +116,7 @@ export function App(): React.JSX.Element {
     /** Show only beats in this state. 'all' is everything. */
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [docView, setDocView] = useState<DocView>('read');
+    const [selectedEdge, setSelectedEdge] = useState<DrawnEdge | null>(null);
 
     const open = useCallback((tab: Tab) => {
         setTabs((current) => (current.some((t) => t.id === tab.id) ? current : [...current, tab]));
@@ -158,6 +179,8 @@ export function App(): React.JSX.Element {
     const activeAct = active?.startsWith('act:') ? active.slice(4) : null;
     const activeTemplate = active?.startsWith('tpl:') ? active.slice(4) : null;
     const activeTable = active?.startsWith('table:') ? active.slice(6) : null;
+    const activeCanvas = active?.startsWith('canvas:') ? active.slice(7) : null;
+    const canvasDoc = activeCanvas ? store.canvasDoc(activeCanvas) : null;
     const doc = activeDoc ? state.docs.get(activeDoc) : undefined;
 
     /* Beat edits go through the store's buffer, so the script view, the canvas and any open
@@ -185,10 +208,7 @@ export function App(): React.JSX.Element {
             <div className="app">
                 <div className="tabs" role="tablist">
                     {tabs.map((tab) => {
-                        const path = tab.id.startsWith('doc:') ? tab.id.slice(4) : null;
-                        const dirty = path
-                            ? state.docs.get(path)?.buffer !== undefined
-                            : state.docs.get(index.nodes.get(tab.id.slice(4))?.path ?? '')?.buffer !== undefined;
+                        const dirty = state.docs.get(fileForTab(tab.id, index) ?? '')?.buffer !== undefined;
                         return (
                             <button
                                 key={tab.id}
@@ -216,6 +236,17 @@ export function App(): React.JSX.Element {
                         onOpenTemplate={(id) => open({ id: `tpl:${id}`, title: `${project.templates.get(id)?.label ?? id} template` })}
                         onOpenRelations={() => open({ id: 'relations', title: 'Relations' })}
                         onOpenTable={(type) => open({ id: `table:${type}`, title: `All ${project.templates.get(type)?.label?.toLowerCase() ?? type}` })}
+                        canvases={store.canvasIds()}
+                        onOpenCanvas={(id) => {
+                            setSelectedEdge(null);
+                            open({ id: `canvas:${id}`, title: store.canvasDoc(id)?.name ?? id });
+                        }}
+                        onCreateCanvas={(id, name) => {
+                            void store.createCanvas(id, name).then(() => {
+                                setSelectedEdge(null);
+                                open({ id: `canvas:${id}`, title: name });
+                            });
+                        }}
                         onCreateTemplate={(id, label) => {
                             void store.createTemplate(id, label).then(() => {
                                 open({ id: `tpl:${id}`, title: `${label} template` });
@@ -292,6 +323,37 @@ export function App(): React.JSX.Element {
                             </div>
                         </>
                     )}
+                    {activeCanvas && canvasDoc && (
+                        <AuthoredCanvas
+                            index={index}
+                            project={project}
+                            canvas={canvasDoc}
+                            selectedEdge={selectedEdge}
+                            onMoveNode={(ref, x, y) => store.updateCanvas(activeCanvas, (c) => moveNode(c, ref, x, y))}
+                            onPlaceNode={(ref, x, y) => {
+                                /* A palette entry either drops something that exists or makes
+                                 * one first. Creating on drop is what makes a canvas a place
+                                 * you build rather than only arrange. */
+                                if (!ref.startsWith(NEW_PREFIX)) {
+                                    store.updateCanvas(activeCanvas, (c) => placeNode(c, ref, x, y));
+                                    return;
+                                }
+                                const type = ref.slice(NEW_PREFIX.length);
+                                const label = project.templates.get(type)?.label ?? type;
+                                const taken = new Set(index.nodes.keys());
+                                let n = 1;
+                                while (taken.has(`${type}-${n}`)) n++;
+                                const id = `${type}-${n}`;
+                                void store.createEntity(type, id, `New ${label.toLowerCase()} ${n}`).then((path) => {
+                                    if (path) store.updateCanvas(activeCanvas, (c) => placeNode(c, id, x, y));
+                                });
+                            }}
+                            onRemoveNode={(ref) => store.updateCanvas(activeCanvas, (c) => removeNode(c, ref))}
+                            onConnect={(from, to) => store.updateCanvas(activeCanvas, (c) => addSketch(c, from, to))}
+                            onSelectEdge={setSelectedEdge}
+                            onOpenDoc={openDoc}
+                        />
+                    )}
                     {activeTemplate && project.templates.get(activeTemplate) && (
                         <TemplateEditor
                             project={project}
@@ -367,14 +429,46 @@ export function App(): React.JSX.Element {
                             </div>
                         </>
                     )}
-                    {!activeAct && !activeDoc && !activeTemplate && !activeTable && active !== 'problems' && active !== 'relations' && (
+                    {!activeAct && !activeDoc && !activeTemplate && !activeTable && !activeCanvas && active !== 'problems' && active !== 'relations' && (
                         <p className="empty" style={{ padding: 'var(--s-6)' }}>Nothing open.</p>
                     )}
                 </main>
 
                 <aside className="right">
                     {state.notice && <p className="notice" role="alert">{state.notice}</p>}
-                    {cursor !== null
+                    {activeCanvas && canvasDoc && selectedEdge ? (
+                        <EdgeInspector
+                            index={index}
+                            project={project}
+                            edge={selectedEdge}
+                            onOpenDoc={openDoc}
+                            onPromote={(rel) => {
+                                const plan = planPromotion(index, project, selectedEdge.from, selectedEdge.to, rel);
+                                if (!plan.ok) return;
+                                if (store.applyEdit(plan.promotion.path, plan.promotion.edit)) {
+                                    /* The claim now lives in a file, so the canvas stops
+                                     * carrying it - a promoted edge is never stored twice. */
+                                    store.updateCanvas(activeCanvas, (c) => removeEdge(c, selectedEdge.from, selectedEdge.to));
+                                    setSelectedEdge(null);
+                                }
+                            }}
+                            onDemote={() => {
+                                if (!selectedEdge.rel) return;
+                                const plan = planDemotion(index, project, selectedEdge.from, selectedEdge.to, selectedEdge.rel);
+                                if (!plan.ok) return;
+                                store.applyEdit(plan.promotion.path, plan.promotion.edit);
+                                setSelectedEdge(null);
+                            }}
+                            onRemoveSketch={() => {
+                                store.updateCanvas(activeCanvas, (c) => removeEdge(c, selectedEdge.from, selectedEdge.to));
+                                setSelectedEdge(null);
+                            }}
+                            onSetRequirement={(req) => store.updateCanvas(activeCanvas, (c) =>
+                                setRequirement(c, selectedEdge.from, selectedEdge.to, selectedEdge.rel ?? undefined, req))}
+                        />
+                    ) : activeCanvas && canvasDoc ? (
+                        <Palette index={index} project={project} present={new Set(canvasDoc.nodes.map((n) => n.ref))} />
+                    ) : cursor !== null
                         ? <WorldPanel index={index} project={project} cursor={cursor} onOpenDoc={openDoc} />
                         : <Inspector index={index} project={project} selected={selected} onOpenDoc={openDoc} />}
                 </aside>
