@@ -1,6 +1,6 @@
 {
   "name": "basic",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A game design workbench: a wiki that writes its own cross-references, driven by a progression document and a flow-chart canvas.",
   "type": "module",
   "main": "electron/main.js",
