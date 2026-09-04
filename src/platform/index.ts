@@ -15,6 +15,22 @@ export interface FileChange {
     text?: string;
 }
 
+/** Where the updater currently is. The renderer renders this; it never infers. */
+export interface UpdateState {
+    status: 'idle' | 'disabled' | 'checking' | 'current' | 'downloading' | 'ready' | 'error';
+    version: string;
+    available?: string;
+    percent?: number;
+    message?: string;
+    reason?: string;
+}
+
+/** What we noticed about a folder before scaffolding a project into it. */
+export interface FolderReport {
+    looksLikeCode: boolean;
+    alreadyAProject: boolean;
+}
+
 export interface WriteAllResult {
     ok: boolean;
     written: string[];
@@ -25,18 +41,32 @@ export interface WriteAllResult {
 export interface Platform {
     readonly isDesktop: boolean;
     pickFolder(mode: 'open' | 'create'): Promise<string | null>;
+    inspectFolder(root: string): Promise<FolderReport>;
     scaffold(root: string, files: ScaffoldFile[]): Promise<void>;
     list(root: string): Promise<string[]>;
     read(root: string, path: string): Promise<string | null>;
     write(root: string, path: string, text: string): Promise<void>;
     writeAll(root: string, edits: ScaffoldFile[]): Promise<WriteAllResult>;
     watch(root: string, onChange: (c: FileChange) => void): () => void;
+    updates: {
+        state(): Promise<UpdateState>;
+        checkNow(): Promise<UpdateState>;
+        install(): Promise<boolean>;
+        subscribe(onChange: (s: UpdateState) => void): () => void;
+    };
 }
 
 interface NativeBridge {
     project: {
         pickFolder(mode: string): Promise<string | null>;
+        inspect(root: string): Promise<FolderReport>;
         scaffold(root: string, files: ScaffoldFile[]): Promise<boolean>;
+    };
+    updates: {
+        state(): Promise<UpdateState>;
+        checkNow(): Promise<UpdateState>;
+        install(): Promise<boolean>;
+        subscribe(onChange: (s: UpdateState) => void): () => void;
     };
     fs: {
         list(root: string): Promise<string[]>;
@@ -52,12 +82,19 @@ const native = (globalThis as { basicNative?: NativeBridge }).basicNative;
 const desktop: Platform = {
     isDesktop: true,
     pickFolder: (mode) => native!.project.pickFolder(mode),
+    inspectFolder: (root) => native!.project.inspect(root),
     scaffold: async (root, files) => { await native!.project.scaffold(root, files); },
     list: (root) => native!.fs.list(root),
     read: (root, path) => native!.fs.read(root, path),
     write: async (root, path, text) => { await native!.fs.write(root, path, text); },
     writeAll: (root, edits) => native!.fs.writeAll(root, edits),
     watch: (root, onChange) => native!.watch(root, onChange),
+    updates: {
+        state: () => native!.updates.state(),
+        checkNow: () => native!.updates.checkNow(),
+        install: () => native!.updates.install(),
+        subscribe: (onChange) => native!.updates.subscribe(onChange),
+    },
 };
 
 /* The browser stand-in. Not a toy: it has the same semantics the real one has,
@@ -84,6 +121,15 @@ const announce = (root: string, change: FileChange): void => {
     for (const fn of listeners.get(root) ?? []) fn(change);
 };
 
+/* __BASIC_VERSION__ is defined at build time by vite. */
+declare const __BASIC_VERSION__: string;
+
+const BROWSER_UPDATE_STATE: UpdateState = {
+    status: 'disabled',
+    version: typeof __BASIC_VERSION__ === 'string' ? __BASIC_VERSION__ : '0.0.0',
+    reason: 'running in a browser',
+};
+
 const browser: Platform = {
     isDesktop: false,
     pickFolder: async (mode) => {
@@ -92,6 +138,8 @@ const browser: Platform = {
         save();
         return name;
     },
+    // A virtual folder is never someone's source tree, and there is nothing to update.
+    inspectFolder: async () => ({ looksLikeCode: false, alreadyAProject: false }),
     scaffold: async (root, files) => {
         vfs[root] ??= {};
         for (const f of files) vfs[root]![f.path] = f.text;
@@ -115,6 +163,12 @@ const browser: Platform = {
         set.add(onChange);
         listeners.set(root, set);
         return () => { set.delete(onChange); };
+    },
+    updates: {
+        state: async () => BROWSER_UPDATE_STATE,
+        checkNow: async () => BROWSER_UPDATE_STATE,
+        install: async () => false,
+        subscribe: () => () => { /* nothing ever changes in a browser */ },
     },
 };
 

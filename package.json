@@ -1,22 +1,33 @@
 {
   "name": "basic",
   "version": "0.1.0",
-  "private": true,
-  "description": "A self-building game wiki with a flow-chart front end",
+  "description": "A game design workbench: a wiki that writes its own cross-references, driven by a progression document and a flow-chart canvas.",
   "type": "module",
   "main": "electron/main.js",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "vite --mode desktop",
     "build": "vite build",
+    "build:desktop": "vite build --mode desktop",
+    "preview": "vite preview",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "electron:dev": "electron ."
+    "art": "node scripts/make-installer-art.mjs",
+    "electron:dev": "electron .",
+    "pack": "npm run art && npm run build:desktop && electron-builder --win --publish never",
+    "release": "node scripts/ensure-release.mjs && npm run art && npm run build:desktop && electron-builder --win --publish always && node scripts/finish-release.mjs",
+    "ensure-release": "node scripts/ensure-release.mjs",
+    "finish-release": "node scripts/finish-release.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.5",
     "@xyflow/react": "^12.8.6",
     "chokidar": "^4.0.3",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "markdown-it": "^14.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -28,7 +39,14 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^38.2.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.9.3",
     "vite": "^7.1.9"
+  },
+  "author": "Hentu van Wyk",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeineZA/Basic.git"
   }
 }

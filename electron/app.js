@@ -1,44 +1,38 @@
-/* Window, IPC and the filesystem. Everything else lives in the renderer.
+/* Window, IPC, the filesystem and updates. Everything else lives in the renderer.
  *
- * The main process deliberately knows nothing about templates, edges or
- * Markdown. It reads bytes, writes bytes atomically, and reports changes. That
- * keeps the whole domain model in one pure, testable place and keeps this file
- * small enough to audit.
+ * The main process deliberately knows nothing about templates, edges or Markdown. It reads
+ * bytes, writes bytes atomically, and reports changes. That keeps the whole domain model in
+ * one pure, testable place and keeps this file small enough to audit.
  *
- * Security posture: contextIsolation on, sandbox on, nodeIntegration off. Paths
- * arriving from the renderer are resolved and checked against the project root
- * before anything touches them - the renderer is not a trusted source of paths. */
+ * Security posture: contextIsolation on, sandbox on, nodeIntegration off. Paths arriving
+ * from the renderer are resolved and checked against the project root before anything
+ * touches them - the renderer is not a trusted source of paths. */
 
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron';
 import { createHash } from 'node:crypto';
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
-import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
+import { dirname, join, normalize, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import chokidar from 'chokidar';
+import electronUpdater from 'electron-updater';
+
+// The bare "electron-log" entry has a `browser` condition and can resolve to the renderer
+// build inside a bundler; /main is the unambiguous one for this process.
+import log from 'electron-log/main';
+
+const { autoUpdater } = electronUpdater;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
 const DEV_URL = 'http://localhost:5173';
 
-/* Electron on Windows does not pipe stdout to the console it was launched from,
- * so anything worth knowing goes to a file next to the crash log. */
-const LOG = join(tmpdir(), 'basic', 'main.log');
+log.initialize();
+log.transports.file.level = 'info';
+autoUpdater.logger = log;
 
-function log(line) {
-    try {
-        mkdirSync(dirname(LOG), { recursive: true });
-        appendFileSync(LOG, `[${new Date().toISOString()}] ${line}
-`);
-    } catch {
-        // Logging must never be the thing that takes the app down.
-    }
-}
-
-/* Hash of the last text WE wrote to each absolute path. A watcher event whose
- * content hashes the same is our own echo. Hash rather than a settling timer:
- * a timer is a guess about scheduler latency, and it is wrong under load. */
+/* Hash of the last text WE wrote to each absolute path. A watcher event whose content
+ * hashes the same is our own echo. Hash rather than a settling timer: a timer is a guess
+ * about scheduler latency, and it is wrong under load. */
 const lastWritten = new Map();
 const watchers = new Map();
 
@@ -46,6 +40,52 @@ const hash = (text) => createHash('sha1').update(text).digest('hex');
 
 const SKIP = new Set(['.basic', '.git', 'node_modules']);
 const DOC = /\.(md|ya?ml|json)$/i;
+
+/* -- serving the renderer -------------------------------------------------- */
+
+/* The app is served from basic://app/ rather than from file://.
+ *
+ * This is not cosmetic. A file:// page has an OPAQUE origin, and Chromium refuses storage
+ * to opaque origins - localStorage throws SecurityError on every call. Basic's browser
+ * storage helper catches and falls back by design, so the failure would be completely
+ * silent: the app appears to work and simply forgets everything every time it closes.
+ *
+ * A registered scheme that is `standard` and `secure` gets a real origin, so storage works,
+ * and it brings the rest of a secure context with it. It also removes file:// path handling
+ * from the equation, which is one fewer way to serve something we did not intend to.
+ *
+ * This registration MUST happen before the app is ready, hence module scope. */
+const SCHEME = 'basic';
+
+protocol.registerSchemesAsPrivileged([{
+    scheme: SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+}]);
+
+const rendererRoot = join(here, '..', 'dist-electron', 'renderer');
+
+function serveRenderer() {
+    protocol.handle(SCHEME, async (request) => {
+        const { pathname } = new URL(request.url);
+        const target = normalize(join(rendererRoot, decodeURIComponent(pathname)));
+
+        // Nothing outside the renderer directory is servable, whatever the URL claims.
+        // Without this, "basic://app/../../../../secrets" is a file read.
+        if (!target.startsWith(normalize(rendererRoot))) {
+            log.warn(`protocol: blocked a path escaping the renderer root: ${request.url}`);
+            return new Response('Not found', { status: 404 });
+        }
+
+        try {
+            return await net.fetch(pathToFileURL(target).toString());
+        } catch (err) {
+            log.error(`protocol: could not serve ${target}: ${err}`);
+            return new Response('Not found', { status: 404 });
+        }
+    });
+}
+
+/* -- filesystem ------------------------------------------------------------ */
 
 /** Resolve a project-relative path, refusing anything that escapes the root. */
 function safeJoin(root, relPath) {
@@ -81,6 +121,53 @@ async function atomicWrite(absolute, text) {
     lastWritten.set(absolute, hash(text));
 }
 
+/* -- updates --------------------------------------------------------------- */
+
+/* One object describing where the updater is, pushed to the renderer whenever it moves.
+ * The renderer renders that object; it never infers state from a sequence of events. */
+let updateState = { status: 'idle', version: app.getVersion() };
+
+function setUpdateState(patch) {
+    updateState = { ...updateState, ...patch, version: app.getVersion() };
+    for (const w of BrowserWindow.getAllWindows()) {
+        w.webContents.send('basic:update.changed', updateState);
+    }
+}
+
+function startUpdater() {
+    if (isDev) {
+        // electron-updater throws without a packaged app-update.yml, and a dev build has
+        // nothing meaningful to update to anyway.
+        setUpdateState({ status: 'disabled', reason: 'development build' });
+        return;
+    }
+
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    // Releases are published as pre-release, so without this the feed looks empty.
+    autoUpdater.allowPrerelease = true;
+
+    autoUpdater.on('checking-for-update', () => setUpdateState({ status: 'checking' }));
+    autoUpdater.on('update-not-available', () => setUpdateState({ status: 'current' }));
+    autoUpdater.on('update-available', (info) => {
+        setUpdateState({ status: 'downloading', available: info.version, percent: 0 });
+    });
+    autoUpdater.on('download-progress', (p) => {
+        setUpdateState({ status: 'downloading', percent: Math.round(p.percent) });
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+        setUpdateState({ status: 'ready', available: info.version });
+    });
+    autoUpdater.on('error', (err) => {
+        log.error(`updater: ${err}`);
+        setUpdateState({ status: 'error', message: String(err?.message ?? err) });
+    });
+
+    autoUpdater.checkForUpdates().catch((err) => log.error(`updater: check threw ${err}`));
+}
+
+/* -- the window ------------------------------------------------------------ */
+
 function createWindow() {
     const win = new BrowserWindow({
         width: 1440,
@@ -104,33 +191,60 @@ function createWindow() {
         return { action: 'deny' };
     });
 
-    /* The renderer only ever needs its own origin. Anything else - a stray link,
-     * a redirect - opens in the real browser rather than replacing the app. */
+    /* The renderer only ever needs its own origin. Anything else - a stray link, a redirect
+     * - opens in the real browser rather than replacing the app. */
     win.webContents.on('will-navigate', (event, url) => {
-        const allowed = isDev && url.startsWith(DEV_URL);
-        if (allowed || url.startsWith('file://')) return;
+        const allowed = isDev ? url.startsWith(DEV_URL) : url.startsWith(`${SCHEME}://`);
+        if (allowed) return;
         event.preventDefault();
         if (url.startsWith('http')) shell.openExternal(url);
     });
 
-    /* A renderer that fails to load otherwise shows a blank window and says
-     * nothing, which is a miserable thing to debug. */
+    /* A renderer that fails to load otherwise shows a blank window and says nothing, which
+     * is a miserable thing to debug. */
     win.webContents.on('did-finish-load', () => {
-        log(`renderer loaded: ${win.webContents.getURL()}`);
+        log.info(`renderer loaded: ${win.webContents.getURL()}`);
+        win.webContents.send('basic:update.changed', updateState);
     });
     win.webContents.on('did-fail-load', (_e, code, description, url) => {
-        log(`renderer FAILED to load (${code} ${description}): ${url}`);
+        log.error(`renderer FAILED to load (${code} ${description}): ${url}`);
     });
 
     if (isDev) win.loadURL(DEV_URL);
-    else win.loadFile(join(here, '..', 'dist', 'index.html'));
+    else win.loadURL(`${SCHEME}://app/index.html`);
 
     return win;
 }
 
-/* -- IPC ----------------------------------------------------------------- */
+/* -- IPC ------------------------------------------------------------------- */
 
-ipcMain.handle('basic:app.info', () => ({ packaged: app.isPackaged, version: app.getVersion() }));
+ipcMain.handle('basic:app.info', () => ({
+    packaged: app.isPackaged,
+    version: app.getVersion(),
+}));
+
+ipcMain.handle('basic:app.openLogFolder', () => {
+    shell.showItemInFolder(log.transports.file.getFile().path);
+    return true;
+});
+
+ipcMain.handle('basic:update.state', () => updateState);
+
+ipcMain.handle('basic:update.checkNow', () => {
+    if (isDev) return updateState;
+    return autoUpdater.checkForUpdates()
+        .then(() => updateState)
+        .catch((err) => {
+            setUpdateState({ status: 'error', message: String(err?.message ?? err) });
+            return updateState;
+        });
+});
+
+ipcMain.handle('basic:update.install', () => {
+    if (updateState.status !== 'ready') return false;
+    autoUpdater.quitAndInstall(true, true);
+    return true;
+});
 
 ipcMain.handle('basic:project.pickFolder', async (_e, mode) => {
     const result = await dialog.showOpenDialog({
@@ -138,6 +252,18 @@ ipcMain.handle('basic:project.pickFolder', async (_e, mode) => {
         properties: ['openDirectory', 'createDirectory'],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
+});
+
+/* A folder that already holds source code is almost certainly not where someone meant to
+ * put a game project - it is what happens when the picker opens on the app's own directory,
+ * which has already happened once here. Report it and let the renderer ask; refusing
+ * outright would be wrong, since someone may genuinely want design notes beside code. */
+ipcMain.handle('basic:project.inspect', async (_e, root) => {
+    const exists = async (name) => stat(join(resolve(root), name)).then(() => true, () => false);
+    const [pkg, git, project] = await Promise.all([
+        exists('package.json'), exists('.git'), exists('basic.json'),
+    ]);
+    return { looksLikeCode: pkg || git, alreadyAProject: project };
 });
 
 ipcMain.handle('basic:project.scaffold', async (_e, { root, files }) => {
@@ -160,9 +286,9 @@ ipcMain.handle('basic:fs.write', async (_e, { root, path, text }) => {
     return true;
 });
 
-/* A batch is computed in full by the renderer, then written here. If one write
- * fails the caller is told exactly which ones landed - a half-updated project
- * the user does not know about is the worst outcome available. */
+/* A batch is computed in full by the renderer, then written here. If one write fails the
+ * caller is told exactly which ones landed - a half-updated project the user does not know
+ * about is the worst outcome available. */
 ipcMain.handle('basic:fs.writeAll', async (_e, { root, edits }) => {
     const written = [];
     for (const edit of edits) {
@@ -213,18 +339,19 @@ ipcMain.handle('basic:fs.unwatch', async (_e, root) => {
     return true;
 });
 
-/* -- lifecycle ----------------------------------------------------------- */
+/* -- lifecycle ------------------------------------------------------------- */
 
 /* NOT `await app.whenReady()` at the top level.
  *
- * Electron dispatches 'ready' only once the main entry has finished evaluating.
- * main.js awaits this module, so a top-level await on whenReady() here means
- * evaluation waits for ready and ready waits for evaluation - the app comes up
- * with no window, no error and no log, forever. Attach a callback instead and
- * let the module finish. */
+ * Electron dispatches 'ready' only once the main entry has finished evaluating. main.js
+ * awaits this module, so a top-level await on whenReady() here means evaluation waits for
+ * ready and ready waits for evaluation - the app comes up with no window, no error and no
+ * log, forever. Attach a callback instead and let the module finish. */
 app.whenReady().then(() => {
-    log(`starting, dev=${isDev}`);
+    log.info(`starting Basic ${app.getVersion()}, dev=${isDev}`);
+    if (!isDev) serveRenderer();
     createWindow();
+    startUpdater();
 });
 
 app.on('activate', () => {

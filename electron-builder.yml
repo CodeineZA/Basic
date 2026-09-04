@@ -1,0 +1,89 @@
+# Packaging for Windows.
+#
+# Pinned to electron-builder 26.x deliberately. The documentation site documents v27, where
+# the signing configuration is renamed entirely - `win.signtoolOptions` and
+# `win.azureSignOptions` collapse into a single `win.sign` union. Following published v27
+# docs against an installed 26.x is a confusing afternoon.
+
+appId: cloud.codeine.basic
+productName: Basic
+copyright: Copyright (c) 2026 Hentu van Wyk
+
+directories:
+  output: release
+  buildResources: build
+
+# Only what the app actually runs. The renderer is built separately by vite; source, tests
+# and the scratch project a developer may have scaffolded here have no business inside a
+# shipped binary.
+files:
+  - electron/**/*
+  - dist-electron/renderer/**/*
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+
+  # REQUIRED while we ship unsigned, and it must flip to true the day we start signing.
+  #
+  # electron-updater verifies a downloaded installer's Authenticode signature against the
+  # publisher name before running it, and defaults to doing so. An unsigned build has no
+  # signature to check, so leaving this on would make every update fail verification and be
+  # discarded - the app would report an update error forever and never move a version.
+  # Turning it off is not a shortcut: it is the honest consequence of an unsigned build,
+  # and it is exactly what signing later buys back.
+  verifyUpdateCodeSignature: false
+
+  # publisherName belongs under signtoolOptions in 26.x, not at this level. Recorded here
+  # because v28 will treat a missing publisher name as a verification failure rather than a
+  # warning, so this is the line that will need a certificate behind it.
+  signtoolOptions:
+    publisherName: Basic
+
+nsis:
+  # An assisted wizard rather than a one-click install. `allowToChangeInstallationDirectory`
+  # is ignored unless oneClick is false, which is a quiet way to lose the directory page.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+  # Per-user by default, and this is not cosmetic: a per-machine install runs its updater
+  # elevated, so every single update would raise a UAC prompt. The wizard still offers
+  # per-machine to anyone who wants it - they just accept the prompt.
+  perMachine: false
+  selectPerMachineByDefault: false
+  allowElevation: true
+
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Basic
+  runAfterFinish: true
+
+  # A design tool's projects live in folders the user chose, not in appData - but the
+  # window state and update cache do live there, and throwing them away on uninstall
+  # would lose nothing worth keeping either way. Left alone to match Weave.
+  deleteAppDataOnUninstall: false
+
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeader: build/installerHeader.bmp
+  installerSidebar: build/installerSidebar.bmp
+  uninstallerSidebar: build/uninstallerSidebar.bmp
+  installerHeaderIcon: build/icon.ico
+
+  artifactName: Basic-Setup-${version}.${ext}
+  uninstallDisplayName: Basic
+
+# GitHub Releases. The repo has to be publicly readable for this to work without shipping a
+# token inside the app, which is why Basic is public.
+publish:
+  provider: github
+  owner: CodeineZA
+  repo: Basic
+  # Published and downloadable, but flagged pre-release. A draft would not be reachable
+  # without a GitHub login, and this needs to be something a person can just download.
+  releaseType: prerelease

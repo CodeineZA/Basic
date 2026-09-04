@@ -10,6 +10,13 @@ html, body, #root {
     margin: 0;
 }
 
+/* The update bar sits ABOVE the app grid rather than inside it, so appearing does
+ * not reshuffle the three regions. */
+#root {
+    display: flex;
+    flex-direction: column;
+}
+
 body {
     background: var(--ground);
     color: var(--ink);
@@ -25,7 +32,8 @@ body {
         "tabs   tabs    tabs"
         "left   centre  right"
         "status status  status";
-    height: 100%;
+    flex: 1;
+    min-height: 0;
 }
 
 /* -- tab bar -------------------------------------------------------------- */
@@ -277,4 +285,25 @@ body {
             "status";
     }
     .left { display: none; }
+}
+
+/* -- update bar ----------------------------------------------------------- */
+
+/* Only rendered when there is something to say. A bar that permanently reports
+ * "up to date" is a bar people stop reading. */
+.update-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    padding: var(--s-3) var(--s-4);
+    background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+    border-bottom: 1px solid var(--accent);
+    font-size: var(--fs-sm);
+}
+
+.update-bar .btn { margin-left: auto; }
+
+.update-bar.is-error {
+    background: color-mix(in srgb, var(--danger) 16%, var(--panel));
+    border-bottom-color: var(--danger);
 }

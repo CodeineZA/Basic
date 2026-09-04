@@ -16,3 +16,6 @@ release/
 /entities/
 /canvases/
 /.basic/
+
+# Generated installer art. Rebuilt by `npm run art`.
+/build/
