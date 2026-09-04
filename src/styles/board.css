@@ -1,0 +1,226 @@
+/* Developer mode and the problems list.
+ *
+ * Status appears three ways at once - a word, a dot, and a position in a column - because
+ * one of those alone excludes somebody. */
+
+.board {
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--s-5) var(--s-6) var(--s-7);
+}
+
+.board-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--s-6);
+    flex-wrap: wrap;
+    margin-bottom: var(--s-5);
+    padding-bottom: var(--s-4);
+    border-bottom: 1px solid var(--line);
+}
+
+.board-head .panel-title { margin: 0; }
+
+.rollup { flex: 1; min-width: 240px; max-width: 460px; }
+
+.rollup-bar {
+    display: flex;
+    gap: 2px;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--sunken);
+}
+
+.rollup-seg { display: block; }
+.rollup-seg.status-pending { background: var(--status-pending); }
+.rollup-seg.status-in-progress { background: var(--status-progress); }
+.rollup-seg.status-complete { background: var(--status-complete); }
+.rollup-seg.is-empty { background: var(--sunken); }
+
+/* The bar is decoration; this line is the actual statement. */
+.rollup-text {
+    margin: var(--s-2) 0 0;
+    font-size: var(--fs-sm);
+    color: var(--ink-2);
+}
+
+.columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s-4);
+    align-items: start;
+}
+
+.column {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-2);
+    padding: var(--s-3);
+}
+
+.column-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin: 0 0 var(--s-3);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-2);
+}
+
+.column-count {
+    margin-left: auto;
+    padding: 0 var(--s-2);
+    border-radius: var(--radius);
+    background: var(--sunken);
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.column-list { list-style: none; margin: 0; padding: 0; }
+.column-list .empty { padding: var(--s-3) 0; font-size: var(--fs-sm); }
+
+.ticket {
+    padding: var(--s-3);
+    margin-bottom: var(--s-3);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--status-pending);
+    border-radius: var(--radius);
+    background: var(--panel);
+    cursor: pointer;
+}
+
+.ticket:hover { border-color: var(--line-strong); }
+
+.ticket.is-selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 var(--ring) var(--accent);
+}
+
+.column.status-pending .ticket { border-left-color: var(--status-pending); }
+.column.status-in-progress .ticket { border-left-color: var(--status-progress); }
+.column.status-complete .ticket { border-left-color: var(--status-complete); }
+
+.ticket-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-2);
+}
+
+.ticket-title { font-weight: 600; font-size: var(--fs-sm); }
+
+.ticket-summary {
+    margin: var(--s-2) 0 0;
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+}
+
+.ticket-verify {
+    margin: var(--s-2) 0 0;
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+}
+
+/* Not a scolding: a statement of what is missing and what it blocks. */
+.ticket-verify.is-unset { color: var(--warn); }
+
+.ticket-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+    padding-top: var(--s-2);
+    border-top: 1px solid var(--line);
+}
+
+.ticket-foot .icon-btn { width: 28px; height: 28px; }
+.ticket-foot .link-btn { margin-left: auto; font-size: var(--fs-xs); }
+
+/* -- problems -------------------------------------------------------------- */
+
+.problems {
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--s-5) var(--s-6) var(--s-7);
+}
+
+.problem-list {
+    list-style: none;
+    margin: 0 0 var(--s-5);
+    padding: 0;
+    max-width: 860px;
+}
+
+.problem-row {
+    padding: var(--s-3) var(--s-4);
+    margin-bottom: var(--s-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--panel);
+}
+
+.problem-row.is-error { border-left-color: var(--danger); }
+.problem-row.is-warning { border-left-color: var(--warn); }
+
+.problem-main {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-4);
+}
+
+.problem-message { font-size: var(--fs-md); }
+
+.problem-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-4);
+    margin-top: var(--s-2);
+    font-size: var(--fs-xs);
+}
+
+.problem-meta .link-btn { font-family: var(--mono); font-size: var(--fs-xs); }
+
+/* -- status filter --------------------------------------------------------- */
+
+.filter {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--fs-sm);
+}
+
+.filter select {
+    min-height: 26px;
+    padding: 0 var(--s-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--fs-sm);
+}
+
+/* -- explorer rollups ------------------------------------------------------ */
+
+.tree-item .mini-bar {
+    display: flex;
+    gap: 1px;
+    width: 34px;
+    height: 4px;
+    margin-left: auto;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--sunken);
+    flex: none;
+}
+
+.mini-seg.status-pending { background: var(--status-pending); }
+.mini-seg.status-in-progress { background: var(--status-progress); }
+.mini-seg.status-complete { background: var(--status-complete); }

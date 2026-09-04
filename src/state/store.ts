@@ -10,6 +10,7 @@ import { parseDoc, type ParsedDoc } from '../core/parse-doc.ts';
 import { makeProject, parseTemplate, DEFAULT_RELATIONS, DEFAULT_STATUSES, type Project } from '../core/project.ts';
 import { renderSections } from '../core/generate.ts';
 import { applyBlocks } from '../core/write-doc.ts';
+import { validateProject } from '../core/validate.ts';
 import type { EditResult } from '../core/edit-doc.ts';
 import { scaffoldProject } from '../core/scaffold.ts';
 import type { Problem, Relation, Template } from '../core/types.ts';
@@ -83,7 +84,8 @@ export function createStore(): Store {
         const index = buildIndex(parsedDocs(), project);
         state = {
             ...state, project, index,
-            problems: [...index.problems, ...state.writeProblems],
+            // validateProject already folds in the indexer's own referential findings.
+            problems: [...validateProject(index, project), ...state.writeProblems],
         };
         emit();
     };

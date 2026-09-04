@@ -12,6 +12,7 @@ import { outgoing, type GraphIndex } from '../../core/index-graph.ts';
 import type { Project } from '../../core/project.ts';
 import type { DocNode, Edge, Requirement } from '../../core/types.ts';
 import { gateChips } from '../chips.ts';
+import { canComplete, COMPLETE } from '../../core/validate.ts';
 
 export interface ScriptViewProps {
     index: GraphIndex;
@@ -19,6 +20,8 @@ export interface ScriptViewProps {
     actId: string;
     /** The beat the world is being shown as of, if any. */
     cursor: string | null;
+    /** Dim beats not in this state. 'all' dims nothing. */
+    statusFilter: string;
     selected: string | null;
     onSetCursor: (beatId: string | null) => void;
     onSelect: (beatId: string) => void;
@@ -51,7 +54,7 @@ function assertions(index: GraphIndex, beatId: string): Array<{ label: string; e
 }
 
 export function ScriptView(props: ScriptViewProps): React.JSX.Element {
-    const { index, project, actId, cursor, selected } = props;
+    const { index, project, actId, cursor, statusFilter, selected } = props;
     const act = index.nodes.get(actId);
     const beats = index.order
         .filter((id) => id.startsWith(`${actId}#`))
@@ -95,6 +98,7 @@ export function ScriptView(props: ScriptViewProps): React.JSX.Element {
                     const isCursor = cursor === beat.id;
                     // Past the cursor is design that has not happened yet at this point in time.
                     const ahead = cursorAt !== -1 && i > cursorAt;
+                    const filtered = statusFilter !== 'all' && status !== statusFilter;
 
                     return (
                         <li
@@ -104,7 +108,7 @@ export function ScriptView(props: ScriptViewProps): React.JSX.Element {
                                 `status-${status}`,
                                 selected === beat.id ? 'is-selected' : '',
                                 isCursor ? 'is-cursor' : '',
-                                ahead ? 'is-ahead' : '',
+                                ahead || filtered ? 'is-ahead' : '',
                             ].filter(Boolean).join(' ')}
                             onClick={() => props.onSelect(beat.id)}
                         >
@@ -121,7 +125,16 @@ export function ScriptView(props: ScriptViewProps): React.JSX.Element {
                                         onChange={(e) => props.onUpdate(beat.locator!, { status: e.target.value })}
                                     >
                                         {project.statuses.map((s) => (
-                                            <option key={s} value={s}>{s.replace('-', ' ')}</option>
+                                            /* Complete is not offered without a verify.
+                                               Done has to mean something checkable. */
+                                            <option
+                                                key={s}
+                                                value={s}
+                                                disabled={s === COMPLETE && !canComplete(beat)}
+                                            >
+                                                {s.replace('-', ' ')}
+                                                {s === COMPLETE && !canComplete(beat) ? ' — needs a verify' : ''}
+                                            </option>
                                         ))}
                                     </select>
                                 </label>

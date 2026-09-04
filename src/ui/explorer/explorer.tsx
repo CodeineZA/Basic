@@ -3,6 +3,7 @@
 import type { GraphIndex } from '../../core/index-graph.ts';
 import type { Project } from '../../core/project.ts';
 import type { DocNode } from '../../core/types.ts';
+import { rollupOf } from '../../core/validate.ts';
 
 export interface ExplorerProps {
     index: GraphIndex;
@@ -33,19 +34,37 @@ export function Explorer({ index, project, currentTab, onOpenAct, onOpenDoc }: E
             <p className="tree-group">Progression</p>
             <ul className="tree">
                 {acts.length === 0 && <li className="empty">No acts yet.</li>}
-                {acts.map((act) => (
-                    <li key={act.id}>
-                        <button
-                            type="button"
-                            className="tree-item"
-                            aria-current={currentTab === `act:${act.id}`}
-                            onClick={() => onOpenAct(act.id)}
-                        >
-                            <span className="swatch" style={{ '--card-accent': 'var(--accent)' } as React.CSSProperties} />
-                            <span>{act.name}</span>
-                        </button>
-                    </li>
-                ))}
+                {acts.map((act) => {
+                    /* Derived from the act's beats, so the project picture here can never
+                     * disagree with the board. */
+                    const roll = rollupOf(index, act.id, project.statuses);
+                    return (
+                        <li key={act.id}>
+                            <button
+                                type="button"
+                                className="tree-item"
+                                aria-current={currentTab === `act:${act.id}`}
+                                title={roll.total === 0
+                                    ? 'No beats yet'
+                                    : `${roll.complete} of ${roll.total} beats complete`}
+                                onClick={() => onOpenAct(act.id)}
+                            >
+                                <span className="swatch" style={{ '--card-accent': 'var(--accent)' } as React.CSSProperties} />
+                                <span>{act.name}</span>
+                                {roll.total > 0 && (
+                                    <span className="mini-bar" aria-hidden="true">
+                                        {project.statuses.map((s) => {
+                                            const n = roll.counts[s] ?? 0;
+                                            return n === 0 ? null : (
+                                                <span key={s} className={`mini-seg status-${s}`} style={{ flexGrow: n }} />
+                                            );
+                                        })}
+                                    </span>
+                                )}
+                            </button>
+                        </li>
+                    );
+                })}
             </ul>
 
             {[...byType.entries()].sort().map(([type, list]) => {

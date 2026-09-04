@@ -43,6 +43,7 @@ src/core/         PURE. No DOM, no Electron, no fs. This is where the thinking l
   index-graph.ts    Builds the graph. Two passes: nodes, then edges.
   fold.ts           World state at any beat, and ordering mistakes only order can reveal.
   edit-doc.ts       Frontmatter edits (beat order, status) that keep comments and prose.
+  validate.ts       Every finding, plus act rollups. Ordering rules live here.
   project.ts        Templates and the relation registry.
   generate.ts       Renders a template's declared sections into Markdown.
   scaffold.ts       What a new project starts life as.
@@ -54,7 +55,7 @@ src/platform/     The ONLY files that know Electron from browser.
   demo.ts           The project opened on first run, built by the real scaffolder.
 
 src/state/store.ts  One store. Docs in, index out, every view subscribes.
-src/ui/             React. canvas/ script/ wiki/ explorer/ inspector/
+src/ui/             React. canvas/ script/ board/ problems/ wiki/ explorer/ inspector/
 src/styles/         tokens.css owns every literal value.
 test/               Flat *.test.ts, node --test.
 
@@ -77,6 +78,8 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 | Why did the card open on click but not on drag? | `src/ui/canvas/card.tsx` |
 | What does the world look like at beat N? | `src/core/fold.ts` |
 | How is an act's beat order changed? | `src/core/edit-doc.ts` |
+| Why is this beat being complained about? | `src/core/validate.ts` |
+| Why can I not mark this beat complete? | `canComplete` in `src/core/validate.ts` |
 | Where do files actually get written? | `electron/app.js` |
 | Why is the app served from basic:// ? | `electron/app.js`, the protocol comment |
 | Why did packaging fail with EPERM? | see below - it is the dev server |
@@ -91,7 +94,14 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
   is a bug; the fix is to add the missing token.
 - **State is never carried by depth alone.** Selection is a ring *and* a colour change.
 - **Never fabricate.** An unset field renders "— not set". A section with nothing in it
-  says `_Nothing yet._`. The status bar prints a count, never a verdict.
+  says `_Nothing yet._`. The status bar prints a count, never a verdict, and an empty
+  problems list says the references resolve — not that the design is finished.
+- **A derived number must not be settable.** An act's status comes from `rollupOf` and there
+  is deliberately no way to type one in, because a green act on top of red beats is exactly
+  the fabricated metric the house rules forbid.
+- **A rule the UI enforces gets a validation rule too.** The status dropdown will not offer
+  `complete` without a `verify`, but a file hand-edited elsewhere can still say it, so
+  `beat/complete-without-verify` catches it. Prevent in the UI, detect in the core.
 - Kebab-case filenames. 4-space indent, single quotes, semicolons, trailing commas.
 
 ## Things that have already cost time
@@ -158,7 +168,7 @@ dist-electron/        GENERATED desktop renderer bundle. Gitignored.
 
 ## State
 
-M1 and M2 are done and verified end to end.
+M1, M2 and M3 are done and verified end to end.
 
 M1: templates, object pages, a progression document with beats, the graph index with
 provenance, generated sections, the canvas, and the editor.
@@ -166,6 +176,10 @@ provenance, generated sections, the canvas, and the editor.
 M2: multi-beat acts, the script view, beat reordering and editing that preserves YAML
 comments, the fold that derives world state at any beat, and the beat scrubber that shows
 the act - script and canvas both - as of a moment in time.
+
+M3: developer mode. The build board with derived rollups, the verify-required-to-complete
+rule enforced in the UI and checked in the core, status filtering across script and canvas,
+and a problems panel surfacing the ordering rules above.
 The desktop app is packaged and shipping: an NSIS installer, the renderer served over
 `basic://`, and updates from GitHub Releases. Verified in a packaged build, not just wired:
 `renderer loaded: basic://app/index.html`, and a kept 0.1.0 build found 0.1.1 on the live
@@ -214,3 +228,20 @@ cp -r release/win-unpacked /d/Claude_Projects/.scratch/basic-<old-version>
 Bump, release, then run that kept copy and watch `%APPDATA%\Basic\logs\main.log`. It should
 report the newer version, compute a block delta, and download. This is how the pipeline was
 verified for 0.1.0 -> 0.1.1.
+
+## What Basic can tell you that a wiki cannot
+
+Referential checks - "this link goes nowhere" - are table stakes. The findings that justify
+the tool all need the ORDER of the progression:
+
+| Rule | What it catches |
+|---|---|
+| `beat/anachronism` | Something used before the beat that introduces it - a vendor selling before anyone has met them. Names the beat that does introduce them. |
+| `beat/unreachable` | A beat requiring one that happens later, or itself. Dead content. |
+| `beat/complete-without-verify` | Done claimed with no way to check it. |
+| `beat/asserts-nothing` | A beat that changes nothing, so it appears nowhere else. |
+| `object/orphan` | Nothing in the design places this in the world. |
+| `item/no-source` | No beat grants, sells or drops it. Only raised for types whose template declares an `obtain` section - a location has no business having a source. |
+
+`test/validate.test.ts` gives every rule a fixture that trips it and the same fixture
+corrected, because a rule that only ever fires is as useless as one that never does.

@@ -11,6 +11,8 @@ import { DEMO_ROOT, ensureDemo, platform, type UpdateState } from '../platform/i
 import { addBeat, moveBeat, nextBeatId, removeBeat, updateBeat } from '../core/edit-doc.ts';
 import { GraphView } from './canvas/graph.tsx';
 import { ScriptView } from './script/script.tsx';
+import { Board } from './board/board.tsx';
+import { Problems } from './problems/problems.tsx';
 import { WorldPanel } from './script/world.tsx';
 import { Editor } from './wiki/editor.tsx';
 import { Explorer } from './explorer/explorer.tsx';
@@ -19,7 +21,7 @@ import { Inspector } from './inspector/inspector.tsx';
 const store = createStore();
 
 interface Tab { id: string; title: string; }
-type ActView = 'script' | 'flow';
+type ActView = 'script' | 'flow' | 'board';
 
 /** The updater's state, kept in sync with the main process. */
 function useUpdates(): UpdateState {
@@ -79,6 +81,8 @@ export function App(): React.JSX.Element {
     const [actView, setActView] = useState<ActView>('script');
     /** The beat the world is being shown as of. Null is "before anything happens". */
     const [cursor, setCursor] = useState<string | null>(null);
+    /** Show only beats in this state. 'all' is everything. */
+    const [statusFilter, setStatusFilter] = useState<string>('all');
 
     const open = useCallback((tab: Tab) => {
         setTabs((current) => (current.some((t) => t.id === tab.id) ? current : [...current, tab]));
@@ -110,6 +114,7 @@ export function App(): React.JSX.Element {
     }, [state.index, tabs.length, openAct]);
 
     const errors = useMemo(() => state.problems.filter((p) => p.severity === 'error'), [state.problems]);
+    const warnings = useMemo(() => state.problems.filter((p) => p.severity === 'warning'), [state.problems]);
 
     if (!state.root || !state.index || !state.project) {
         return (
@@ -187,16 +192,32 @@ export function App(): React.JSX.Element {
                                         type="button" aria-pressed={actView === 'flow'}
                                         onClick={() => setActView('flow')}
                                     >Flow</button>
+                                    <button
+                                        type="button" aria-pressed={actView === 'board'}
+                                        onClick={() => setActView('board')}
+                                    >Board</button>
                                 </div>
                             </div>
 
                             <div className="centre-body">
-                            {actView === 'script' ? (
+                            {actView === 'board' ? (
+                                <Board
+                                    index={index}
+                                    project={project}
+                                    actId={activeAct}
+                                    selected={selected}
+                                    onSelect={setSelected}
+                                    onSetStatus={(beatId, status) =>
+                                        editAct((t, f) => updateBeat(t, beatId, { status }, f))}
+                                    onOpenDoc={openDoc}
+                                />
+                            ) : actView === 'script' ? (
                                 <ScriptView
                                     index={index}
                                     project={project}
                                     actId={activeAct}
                                     cursor={cursor}
+                                    statusFilter={statusFilter}
                                     selected={selected}
                                     onSetCursor={setCursor}
                                     onSelect={setSelected}
@@ -215,12 +236,16 @@ export function App(): React.JSX.Element {
                                     project={project}
                                     actId={activeAct}
                                     cursor={cursor}
+                                    statusFilter={statusFilter}
                                     onOpenDoc={openDoc}
                                     onSelectNode={setSelected}
                                 />
                             )}
                             </div>
                         </>
+                    )}
+                    {active === 'problems' && (
+                        <Problems problems={state.problems} onOpenDoc={openDoc} />
                     )}
                     {activeDoc && doc && (
                         <Editor
@@ -232,7 +257,7 @@ export function App(): React.JSX.Element {
                             onResolve={(keep) => store.resolveConflict(activeDoc, keep)}
                         />
                     )}
-                    {!activeAct && !activeDoc && (
+                    {!activeAct && !activeDoc && active !== 'problems' && (
                         <p className="empty" style={{ padding: 'var(--s-6)' }}>Nothing open.</p>
                     )}
                 </main>
@@ -247,9 +272,14 @@ export function App(): React.JSX.Element {
                 <footer className="status">
                     <span>{state.name}</span>
                     {/* A count, not a mood: zero problems says zero, never "looks good". */}
-                    <span className={errors.length > 0 ? 'count-error' : 'count-ok'}>
-                        {errors.length} {errors.length === 1 ? 'problem' : 'problems'}
-                    </span>
+                    <button
+                        type="button"
+                        className={`link-btn ${errors.length > 0 ? 'count-error' : 'count-ok'}`}
+                        onClick={() => open({ id: 'problems', title: 'Problems' })}
+                    >
+                        {errors.length} {errors.length === 1 ? 'error' : 'errors'}
+                        {warnings.length > 0 && <span className="muted"> · {warnings.length} warnings</span>}
+                    </button>
                     <span className="muted">{index.nodes.size} nodes · {index.edges.length} links</span>
 
                     <label className="scrubber">
@@ -264,6 +294,20 @@ export function App(): React.JSX.Element {
                                 <option key={id} value={id}>
                                     {i + 1}. {index.nodes.get(id)?.name ?? id}
                                 </option>
+                            ))}
+                        </select>
+                    </label>
+
+                    <label className="filter">
+                        <span className="muted">Show</span>
+                        <select
+                            value={statusFilter}
+                            aria-label="Show only beats in a given state"
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                        >
+                            <option value="all">everything</option>
+                            {project.statuses.map((s) => (
+                                <option key={s} value={s}>{s.replace('-', ' ')} only</option>
                             ))}
                         </select>
                     </label>

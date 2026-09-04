@@ -43,6 +43,18 @@ connects_to: []
 Dark pines and older graves.
 `,
 
+    'entities/location/feckl-fjord.md': `---
+id: feckl-fjord
+type: location
+name: Feckl Fjord
+status: complete
+access: Through the wrought iron gates at the head of the valley.
+connects_to: []
+---
+
+A town that does not know your name and is in no hurry to learn it.
+`,
+
     'progression/act-1.md': `---
 id: act_1
 type: act
@@ -52,6 +64,7 @@ beats:
     title: The wrought iron gates
     status: complete
     verify: flag entered_gates is set and the player is in the village
+    opens: ["[[feckl-fjord]]"]
     text: Fog parts as the player steps through the gates.
   - id: beat_01_03
     title: Igor turns up uninvited

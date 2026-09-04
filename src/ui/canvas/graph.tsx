@@ -82,11 +82,13 @@ export interface GraphViewProps {
     actId: string;
     /** Show the act as of this beat: later beats, and things not yet introduced, dim. */
     cursor?: string | null;
+    /** Dim beats not in this state. 'all' dims nothing. */
+    statusFilter?: string;
     onOpenDoc: (path: string) => void;
     onSelectNode: (id: string | null) => void;
 }
 
-export function GraphView({ index, project, actId, cursor = null, onOpenDoc, onSelectNode }: GraphViewProps): React.JSX.Element {
+export function GraphView({ index, project, actId, cursor = null, statusFilter = 'all', onOpenDoc, onSelectNode }: GraphViewProps): React.JSX.Element {
     const [openId, setOpenId] = useState<string | null>(null);
 
     const { nodes, edges, bounds } = useMemo(() => {
@@ -103,6 +105,8 @@ export function GraphView({ index, project, actId, cursor = null, onOpenDoc, onS
         const world = cursor === null ? null : foldTo(index, project, cursor);
         const reached = new Set(world?.elapsed ?? []);
         const isDim = (node: DocNode): boolean => {
+            // Two independent reasons to dim: not yet true at the cursor, or filtered out.
+            if (statusFilter !== 'all' && node.kind === 'beat' && node.status !== statusFilter) return true;
             if (!world) return false;
             if (node.kind === 'beat') return !reached.has(node.id);
             return !existsAt(world, node.id);
@@ -179,7 +183,7 @@ export function GraphView({ index, project, actId, cursor = null, onOpenDoc, onS
         });
 
         return { nodes: flowNodes, edges: flowEdges, bounds: boundsOf(placed, sizes) };
-    }, [index, project, actId, cursor, openId, onOpenDoc]);
+    }, [index, project, actId, cursor, statusFilter, openId, onOpenDoc]);
 
     return (
         <div className="canvas-wrap">
